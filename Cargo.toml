@@ -1,0 +1,18 @@
+[package]
+name = "ssh_split_pane"
+version = "0.1.0"
+edition = "2021"
+description = "Remote dual-pane file manager: drag to cp/mv over SSH"
+license = "MIT"
+authors = ["ssh_split_pane"]
+
+[dependencies]
+eframe = { version = "0.29", default-features = true, features = ["default_fonts"] }
+egui = "0.29"
+ssh2 = { version = "0.9", features = ["vendored-openssl"] }
+rfd = "0.15"
+
+[profile.release]
+lto = true
+codegen-units = 1
+strip = true

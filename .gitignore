@@ -1,0 +1,40 @@
+# Rust / Cargo
+/target/
+**/*.rs.bk
+*.pdb
+
+# Debug / profiling
+*.profraw
+*.profdata
+
+# Backup / editor swap
+*~
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# IDEs / editors
+.idea/
+.vscode/
+*.code-workspace
+.vs/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+
+# Env / local secrets (never commit)
+.env
+.env.*
+!.env.example
+*.pem
+id_rsa
+id_rsa.*
+*.key
+
+# Logs / local tooling
+*.log
+/dist/
+/out/
