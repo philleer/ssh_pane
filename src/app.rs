@@ -53,6 +53,7 @@ pub struct App {
 
 impl App {
     pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
+        ssh_split_pane::fonts::install_cjk_fonts(&cc.egui_ctx);
         apply_large_style(&cc.egui_ctx);
         Self {
             screen: Screen::Connect,
