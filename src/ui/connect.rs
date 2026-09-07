@@ -60,7 +60,7 @@ impl ConnectForm {
     /// Draw the connect form into an existing `Ui`.
     pub fn show_in(&mut self, ui: &mut egui::Ui, worker: &WorkerHandle) -> bool {
         let mut requested = false;
-        const FORM_WIDTH: f32 = 480.0;
+        const FORM_WIDTH: f32 = 620.0;
 
         ui.vertical_centered(|ui| {
             ui.add_space(48.0);
@@ -88,19 +88,20 @@ impl ConnectForm {
                         .spacing([16.0, 12.0])
                         .show(ui, |ui| {
                             ui.label(RichText::new("Host").size(18.0));
-                            ui.vertical(|ui| {
+                            ui.horizontal(|ui| {
                                 ui.add(
                                     egui::TextEdit::singleline(&mut self.host)
-                                        .desired_width(320.0)
+                                        .desired_width(260.0)
                                         .margin(egui::Margin::symmetric(10.0, 8.0))
                                         .hint_text("hostname or IP"),
                                 );
-                                ui.add_space(4.0);
+                                ui.add_space(8.0);
                                 if ui
                                     .checkbox(
                                         &mut self.remember_host,
-                                        RichText::new("记住服务器 IP").size(15.0),
+                                        RichText::new("Remember Me").size(15.0),
                                     )
+                                    .on_hover_text("Remember host IP")
                                     .changed()
                                 {
                                     self.persist_settings();
@@ -118,18 +119,19 @@ impl ConnectForm {
                             ui.end_row();
 
                             ui.label(RichText::new("User").size(18.0));
-                            ui.vertical(|ui| {
+                            ui.horizontal(|ui| {
                                 ui.add(
                                     egui::TextEdit::singleline(&mut self.user)
-                                        .desired_width(320.0)
+                                        .desired_width(260.0)
                                         .margin(egui::Margin::symmetric(10.0, 8.0)),
                                 );
-                                ui.add_space(4.0);
+                                ui.add_space(8.0);
                                 if ui
                                     .checkbox(
                                         &mut self.remember_user,
-                                        RichText::new("记住用户名").size(15.0),
+                                        RichText::new("Remember Me").size(15.0),
                                     )
+                                    .on_hover_text("Remember username")
                                     .changed()
                                 {
                                     self.persist_settings();
