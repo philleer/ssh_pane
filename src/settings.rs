@@ -1,4 +1,4 @@
-//! Persistent UI settings (remember username, etc.).
+//! Persistent UI settings (remember username / host, etc.).
 
 use std::fs;
 use std::path::PathBuf;
@@ -9,6 +9,8 @@ use log::{debug, warn};
 pub struct Settings {
     pub remember_user: bool,
     pub user: String,
+    pub remember_host: bool,
+    pub host: String,
 }
 
 impl Settings {
@@ -25,13 +27,10 @@ impl Settings {
             }
             if let Some((k, v)) = line.split_once('=') {
                 match k.trim() {
-                    "remember_user" => {
-                        s.remember_user = matches!(
-                            v.trim().to_ascii_lowercase().as_str(),
-                            "1" | "true" | "yes" | "on"
-                        );
-                    }
+                    "remember_user" => s.remember_user = parse_bool(v),
                     "user" => s.user = v.trim().to_string(),
+                    "remember_host" => s.remember_host = parse_bool(v),
+                    "host" => s.host = v.trim().to_string(),
                     _ => {}
                 }
             }
@@ -49,19 +48,44 @@ impl Settings {
             }
         }
         let body = format!(
-            "# ssh_split_pane settings\nremember_user={}\nuser={}\n",
-            if self.remember_user { "true" } else { "false" },
+            "# ssh_split_pane settings\n\
+remember_user={}\n\
+user={}\n\
+remember_host={}\n\
+host={}\n",
+            bool_str(self.remember_user),
             if self.remember_user {
                 self.user.as_str()
             } else {
                 ""
-            }
+            },
+            bool_str(self.remember_host),
+            if self.remember_host {
+                self.host.as_str()
+            } else {
+                ""
+            },
         );
         if let Err(e) = fs::write(&path, body) {
             warn!("cannot write settings {}: {e}", path.display());
         } else {
             debug!("saved settings to {}", path.display());
         }
+    }
+}
+
+fn parse_bool(v: &str) -> bool {
+    matches!(
+        v.trim().to_ascii_lowercase().as_str(),
+        "1" | "true" | "yes" | "on"
+    )
+}
+
+fn bool_str(v: bool) -> &'static str {
+    if v {
+        "true"
+    } else {
+        "false"
     }
 }
 
@@ -89,5 +113,7 @@ mod tests {
         let s = Settings::default();
         assert!(!s.remember_user);
         assert!(s.user.is_empty());
+        assert!(!s.remember_host);
+        assert!(s.host.is_empty());
     }
 }

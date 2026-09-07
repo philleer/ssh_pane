@@ -13,6 +13,7 @@ pub struct ConnectForm {
     pub password: String,
     pub private_key: String,
     pub remember_user: bool,
+    pub remember_host: bool,
     pub connecting: bool,
     pub error: Option<String>,
 }
@@ -21,7 +22,11 @@ impl ConnectForm {
     pub fn new() -> Self {
         let settings = Settings::load();
         Self {
-            host: "127.0.0.1".into(),
+            host: if settings.remember_host && !settings.host.is_empty() {
+                settings.host
+            } else {
+                "127.0.0.1".into()
+            },
             port: "22".into(),
             user: if settings.remember_user {
                 settings.user
@@ -31,6 +36,7 @@ impl ConnectForm {
             password: String::new(),
             private_key: String::new(),
             remember_user: settings.remember_user,
+            remember_host: settings.remember_host,
             connecting: false,
             error: None,
         }
@@ -82,12 +88,24 @@ impl ConnectForm {
                         .spacing([16.0, 12.0])
                         .show(ui, |ui| {
                             ui.label(RichText::new("Host").size(18.0));
-                            ui.add(
-                                egui::TextEdit::singleline(&mut self.host)
-                                    .desired_width(320.0)
-                                    .margin(egui::Margin::symmetric(10.0, 8.0))
-                                    .hint_text("hostname or IP"),
-                            );
+                            ui.vertical(|ui| {
+                                ui.add(
+                                    egui::TextEdit::singleline(&mut self.host)
+                                        .desired_width(320.0)
+                                        .margin(egui::Margin::symmetric(10.0, 8.0))
+                                        .hint_text("hostname or IP"),
+                                );
+                                ui.add_space(4.0);
+                                if ui
+                                    .checkbox(
+                                        &mut self.remember_host,
+                                        RichText::new("记住服务器 IP").size(15.0),
+                                    )
+                                    .changed()
+                                {
+                                    self.persist_settings();
+                                }
+                            });
                             ui.end_row();
 
                             ui.label(RichText::new("Port").size(18.0));
@@ -113,14 +131,8 @@ impl ConnectForm {
                                         RichText::new("记住用户名").size(15.0),
                                     )
                                     .changed()
-                                    && !self.remember_user
                                 {
-                                    // Unchecking clears persisted username immediately.
-                                    Settings {
-                                        remember_user: false,
-                                        user: String::new(),
-                                    }
-                                    .save();
+                                    self.persist_settings();
                                 }
                             });
                             ui.end_row();
@@ -183,7 +195,7 @@ impl ConnectForm {
                         {
                             match self.build_params() {
                                 Ok(params) => {
-                                    self.persist_user_setting();
+                                    self.persist_settings();
                                     self.connecting = true;
                                     self.error = None;
                                     worker.send(WorkerRequest::Connect(params));
@@ -202,11 +214,17 @@ impl ConnectForm {
         requested
     }
 
-    fn persist_user_setting(&self) {
+    fn persist_settings(&self) {
         Settings {
             remember_user: self.remember_user,
             user: if self.remember_user {
                 self.user.trim().to_string()
+            } else {
+                String::new()
+            },
+            remember_host: self.remember_host,
+            host: if self.remember_host {
+                self.host.trim().to_string()
             } else {
                 String::new()
             },
@@ -247,8 +265,7 @@ impl ConnectForm {
     pub fn on_connected(&mut self) {
         self.connecting = false;
         self.error = None;
-        // Refresh saved username after a successful connect as well.
-        self.persist_user_setting();
+        self.persist_settings();
     }
 }
 
