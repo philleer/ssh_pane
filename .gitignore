@@ -36,5 +36,6 @@ id_rsa.*
 
 # Logs / local tooling
 *.log
+/logs/
 /dist/
 /out/

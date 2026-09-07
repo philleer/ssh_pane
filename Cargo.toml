@@ -11,6 +11,8 @@ eframe = { version = "0.29", default-features = true, features = ["default_fonts
 egui = "0.29"
 ssh2 = { version = "0.9", features = ["vendored-openssl"] }
 rfd = "0.15"
+log = "0.4"
+env_logger = "0.11"
 
 [profile.release]
 lto = true

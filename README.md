@@ -12,6 +12,7 @@ Drag items between panes to run remote `cp` or `mv` on the same host (no local f
 - Drag from one pane to the other to copy or move on the server
 - Create new folders (pane **+ Folder** or File menu)
 - Overwrite confirmation when the destination name already exists
+- Structured logging via `log` / `env_logger`
 
 ## Requirements
 
@@ -59,15 +60,46 @@ Operations run as remote shell commands:
 - Copy: `cp -a -- <src> <dst_dir>/`
 - Move: `mv -- <src> <dst_dir>/`
 
+### Logging
+
+```bash
+# default: ssh_split_pane=info
+RUST_LOG=ssh_split_pane=debug ./target/release/ssh_split_pane
+```
+
+## Tests
+
+```bash
+# Unit tests (in-crate) + functional tests (tests/)
+cargo test
+
+# Functional suites only
+cargo test --test functional_ops --test functional_pathutil --test functional_worker
+
+# Optional live SSH functional test (ignored by default)
+SSH_SPLIT_PANE_TEST_HOST=127.0.0.1 \
+SSH_SPLIT_PANE_TEST_USER=me \
+SSH_SPLIT_PANE_TEST_PASSWORD=secret \
+cargo test --test functional_live_ssh -- --ignored --nocapture
+```
+
 ## Project layout
 
 ```
 src/
-  main.rs        # eframe entry
+  lib.rs         # library root (pathutil / ops / ssh_worker / logging)
+  main.rs        # eframe entry + logger init
   app.rs         # UI state machine
-  ssh_worker.rs  # background SSH/SFTP thread
+  logging.rs     # env_logger setup
+  ops.rs         # pure remote command planning (testable)
   pathutil.rs    # remote paths + shell quoting
-  ui/            # connect, toolbar, pane widgets
+  ssh_worker.rs  # background SSH/SFTP thread
+  ui/            # connect, toolbar, pane, menu widgets
+tests/
+  functional_ops.rs       # CP/MV/mkdir planning scenarios
+  functional_pathutil.rs  # navigation / quoting scenarios
+  functional_worker.rs    # worker messaging without a session
+  functional_live_ssh.rs  # optional live SSH (--ignored)
 ```
 
 ## License
