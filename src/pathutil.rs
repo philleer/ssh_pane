@@ -29,6 +29,9 @@ pub fn parent(path: &str) -> String {
 /// Basename of a remote path.
 pub fn basename(path: &str) -> &str {
     let path = path.trim_end_matches('/');
+    if path.is_empty() {
+        return "/";
+    }
     path.rsplit('/').next().unwrap_or(path)
 }
 
@@ -45,6 +48,37 @@ pub fn shell_quote(s: &str) -> String {
     }
     out.push('\'');
     out
+}
+
+/// Normalize a user-entered remote path to absolute POSIX form.
+pub fn normalize(p: &str) -> String {
+    let p = p.trim().trim_end_matches('/');
+    if p.is_empty() {
+        return "/".into();
+    }
+    let s = if p.starts_with('/') {
+        p.to_string()
+    } else {
+        format!("/{p}")
+    };
+    let mut out = String::with_capacity(s.len());
+    let mut prev_slash = false;
+    for ch in s.chars() {
+        if ch == '/' {
+            if !prev_slash {
+                out.push('/');
+            }
+            prev_slash = true;
+        } else {
+            out.push(ch);
+            prev_slash = false;
+        }
+    }
+    if out.is_empty() {
+        "/".into()
+    } else {
+        out
+    }
 }
 
 #[cfg(test)]
@@ -69,6 +103,14 @@ mod tests {
         assert_eq!(parent("/tmp"), "/");
         assert_eq!(parent("/home/user"), "/home");
         assert_eq!(parent("/home/user/"), "/home");
+        assert_eq!(parent("relative"), "/");
+    }
+
+    #[test]
+    fn basename_paths() {
+        assert_eq!(basename("/home/user/file.txt"), "file.txt");
+        assert_eq!(basename("/home/user/"), "user");
+        assert_eq!(basename("/"), "/");
     }
 
     #[test]
@@ -76,5 +118,13 @@ mod tests {
         assert_eq!(shell_quote("abc"), "'abc'");
         assert_eq!(shell_quote("a b"), "'a b'");
         assert_eq!(shell_quote("a'b"), "'a'\\''b'");
+    }
+
+    #[test]
+    fn normalize_paths() {
+        assert_eq!(normalize(""), "/");
+        assert_eq!(normalize("tmp"), "/tmp");
+        assert_eq!(normalize("/tmp//a/"), "/tmp/a");
+        assert_eq!(normalize("///"), "/");
     }
 }

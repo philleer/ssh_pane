@@ -1,11 +1,12 @@
 mod app;
-mod pathutil;
-mod ssh_worker;
 mod ui;
 
 use app::App;
 
 fn main() -> eframe::Result<()> {
+    ssh_split_pane::logging::init();
+    log::info!("SSH Split Pane starting");
+
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_inner_size([1280.0, 800.0])

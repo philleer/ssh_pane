@@ -7,9 +7,11 @@ use std::sync::mpsc::{self, Receiver, Sender};
 use std::thread;
 use std::time::Duration;
 
+use log::{debug, error, info, warn};
 use ssh2::Session;
 
-use crate::pathutil::{self, shell_quote};
+use crate::ops;
+use crate::pathutil::shell_quote;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PaneSide {
@@ -137,6 +139,7 @@ impl WorkerHandle {
             .spawn(move || worker_loop(req_rx, ev_tx))
             .expect("spawn ssh worker");
 
+        info!("ssh worker thread spawned");
         Self {
             tx: req_tx,
             rx: ev_rx,
@@ -144,11 +147,20 @@ impl WorkerHandle {
     }
 
     pub fn send(&self, req: WorkerRequest) {
-        let _ = self.tx.send(req);
+        debug!("worker request: {req:?}");
+        if let Err(e) = self.tx.send(req) {
+            error!("failed to send worker request: {e}");
+        }
     }
 
     pub fn try_recv(&self) -> Option<WorkerEvent> {
-        self.rx.try_recv().ok()
+        match self.rx.try_recv() {
+            Ok(ev) => {
+                debug!("worker event: {ev:?}");
+                Some(ev)
+            }
+            Err(_) => None,
+        }
     }
 }
 
@@ -161,19 +173,32 @@ fn worker_loop(req_rx: Receiver<WorkerRequest>, ev_tx: Sender<WorkerEvent>) {
 
     while let Ok(req) = req_rx.recv() {
         match req {
-            WorkerRequest::Shutdown => break,
+            WorkerRequest::Shutdown => {
+                info!("ssh worker shutting down");
+                break;
+            }
             WorkerRequest::Disconnect => {
+                info!("disconnecting SSH session");
                 state = None;
                 let _ = ev_tx.send(WorkerEvent::Disconnected);
             }
             WorkerRequest::Connect(params) => {
                 state = None;
+                info!(
+                    "connecting to {}@{}:{} (key={})",
+                    params.user,
+                    params.host,
+                    params.port,
+                    params.private_key.is_some()
+                );
                 match connect(&params) {
                     Ok((sess, home)) => {
+                        info!("connected; remote home={home}");
                         state = Some(sess);
                         let _ = ev_tx.send(WorkerEvent::Connected { home });
                     }
                     Err(e) => {
+                        warn!("connect failed: {e}");
                         let _ = ev_tx.send(WorkerEvent::ConnectFailed(e));
                     }
                 }
@@ -187,8 +212,10 @@ fn worker_loop(req_rx: Receiver<WorkerRequest>, ev_tx: Sender<WorkerEvent>) {
                     });
                     continue;
                 };
+                debug!("list_dir side={side:?} path={path}");
                 match list_dir(&s.session, &path) {
                     Ok(entries) => {
+                        debug!("listed {} entries in {path}", entries.len());
                         let _ = ev_tx.send(WorkerEvent::Listed {
                             side,
                             path,
@@ -196,6 +223,7 @@ fn worker_loop(req_rx: Receiver<WorkerRequest>, ev_tx: Sender<WorkerEvent>) {
                         });
                     }
                     Err(e) => {
+                        warn!("list_dir failed for {path}: {e}");
                         let _ = ev_tx.send(WorkerEvent::ListFailed {
                             side,
                             path,
@@ -216,9 +244,10 @@ fn worker_loop(req_rx: Receiver<WorkerRequest>, ev_tx: Sender<WorkerEvent>) {
                     });
                     continue;
                 };
-                let dest = pathutil::join(&dst_dir, pathutil::basename(&src));
+                let dest = ops::destination_path(&src, &dst_dir);
                 match path_exists(&s.session, &dest) {
                     Ok(true) if !overwrite => {
+                        info!("target exists, asking overwrite confirm: {dest}");
                         let _ = ev_tx.send(WorkerEvent::NeedsOverwriteConfirm {
                             src,
                             dst_dir,
@@ -235,6 +264,7 @@ fn worker_loop(req_rx: Receiver<WorkerRequest>, ev_tx: Sender<WorkerEvent>) {
                         )));
                         match transfer(&s.session, &src, &dst_dir, mode, true) {
                             Ok(()) => {
+                                info!("{} ok: {src} → {dst_dir}", mode.label());
                                 let _ = ev_tx.send(WorkerEvent::TransferOk {
                                     src,
                                     dst_dir,
@@ -242,11 +272,13 @@ fn worker_loop(req_rx: Receiver<WorkerRequest>, ev_tx: Sender<WorkerEvent>) {
                                 });
                             }
                             Err(e) => {
+                                error!("transfer failed: {e}");
                                 let _ = ev_tx.send(WorkerEvent::TransferFailed { error: e });
                             }
                         }
                     }
                     Err(e) => {
+                        error!("exists check failed: {e}");
                         let _ = ev_tx.send(WorkerEvent::TransferFailed { error: e });
                     }
                 }
@@ -271,6 +303,7 @@ fn worker_loop(req_rx: Receiver<WorkerRequest>, ev_tx: Sender<WorkerEvent>) {
                 )));
                 match transfer(&s.session, &src, &dst_dir, mode, overwrite) {
                     Ok(()) => {
+                        info!("{} ok: {src} → {dst_dir}", mode.label());
                         let _ = ev_tx.send(WorkerEvent::TransferOk {
                             src,
                             dst_dir,
@@ -278,6 +311,7 @@ fn worker_loop(req_rx: Receiver<WorkerRequest>, ev_tx: Sender<WorkerEvent>) {
                         });
                     }
                     Err(e) => {
+                        error!("transfer failed: {e}");
                         let _ = ev_tx.send(WorkerEvent::TransferFailed { error: e });
                     }
                 }
@@ -289,14 +323,24 @@ fn worker_loop(req_rx: Receiver<WorkerRequest>, ev_tx: Sender<WorkerEvent>) {
                     });
                     continue;
                 };
-                let path = pathutil::join(&parent, &name);
-                let _ = ev_tx.send(WorkerEvent::Busy(format!("mkdir {path}")));
-                match mkdir(&s.session, &path) {
-                    Ok(()) => {
-                        let _ = ev_tx.send(WorkerEvent::MkdirOk { side, path });
+                match ops::plan_mkdir(&parent, &name) {
+                    Ok((path, _)) => {
+                        let _ = ev_tx.send(WorkerEvent::Busy(format!("mkdir {path}")));
+                        match mkdir(&s.session, &path) {
+                            Ok(()) => {
+                                info!("mkdir ok: {path}");
+                                let _ = ev_tx.send(WorkerEvent::MkdirOk { side, path });
+                            }
+                            Err(e) => {
+                                error!("mkdir failed: {e}");
+                                let _ = ev_tx.send(WorkerEvent::MkdirFailed { error: e });
+                            }
+                        }
                     }
                     Err(e) => {
-                        let _ = ev_tx.send(WorkerEvent::MkdirFailed { error: e });
+                        let _ = ev_tx.send(WorkerEvent::MkdirFailed {
+                            error: e.to_string(),
+                        });
                     }
                 }
             }
@@ -346,7 +390,6 @@ fn connect(params: &ConnectParams) -> Result<(SessionState, String), String> {
 }
 
 fn resolve_home(session: &Session) -> Result<String, String> {
-    // Prefer SFTP realpath of "."
     let sftp = session.sftp().map_err(|e| format!("SFTP open: {e}"))?;
     match sftp.realpath(std::path::Path::new(".")) {
         Ok(p) => Ok(p.to_string_lossy().replace('\\', "/")),
@@ -397,7 +440,6 @@ fn path_exists(session: &Session, path: &str) -> Result<bool, String> {
     match sftp.stat(std::path::Path::new(path)) {
         Ok(_) => Ok(true),
         Err(e) => {
-            // LIBSSH2_ERROR_SFTP_PROTOCOL with NO_SUCH_FILE is expected for missing
             let msg = e.to_string();
             if msg.contains("NO_SUCH_FILE")
                 || msg.contains("no such file")
@@ -405,8 +447,6 @@ fn path_exists(session: &Session, path: &str) -> Result<bool, String> {
             {
                 Ok(false)
             } else {
-                // Some libssh2 builds just return a generic code; treat as missing if code-like.
-                // Fallback: test -e via shell.
                 let cmd = format!("test -e {} && echo yes || echo no", shell_quote(path));
                 let (code, out, err) = exec(session, &cmd)?;
                 if code != 0 && !out.contains("no") {
@@ -419,7 +459,8 @@ fn path_exists(session: &Session, path: &str) -> Result<bool, String> {
 }
 
 fn mkdir(session: &Session, path: &str) -> Result<(), String> {
-    let cmd = format!("mkdir -- {}", shell_quote(path));
+    let cmd = ops::mkdir_command(path);
+    debug!("exec: {cmd}");
     let (code, _, err) = exec(session, &cmd)?;
     if code != 0 {
         return Err(if err.trim().is_empty() {
@@ -438,39 +479,24 @@ fn transfer(
     mode: OpMode,
     overwrite: bool,
 ) -> Result<(), String> {
-    let dest = pathutil::join(dst_dir, pathutil::basename(src));
-    if overwrite {
-        // Remove existing target first so cp/mv don't nest unexpectedly for dirs.
-        let rm = format!("rm -rf -- {}", shell_quote(&dest));
-        let (code, _, err) = exec(session, &rm)?;
+    let plan = ops::plan_transfer(src, dst_dir, mode, overwrite).map_err(|e| e.to_string())?;
+    for cmd in &plan.commands {
+        debug!("exec: {cmd}");
+        let (code, _, err) = exec(session, cmd)?;
         if code != 0 {
-            // Ignore missing; fail on real errors
-            if !err.to_lowercase().contains("no such file") {
-                // Continue anyway — cp/mv may still work
+            if cmd.starts_with("rm ") && err.to_lowercase().contains("no such file") {
+                continue;
             }
+            if cmd.starts_with("rm ") {
+                warn!("overwrite rm warning: {err}");
+                continue;
+            }
+            return Err(if err.trim().is_empty() {
+                format!("Command failed with exit code {code}")
+            } else {
+                err.trim().to_string()
+            });
         }
-    }
-
-    let cmd = match mode {
-        OpMode::Copy => format!(
-            "cp -a -- {} {}/",
-            shell_quote(src),
-            shell_quote(dst_dir)
-        ),
-        OpMode::Move => format!(
-            "mv -- {} {}/",
-            shell_quote(src),
-            shell_quote(dst_dir)
-        ),
-    };
-
-    let (code, _, err) = exec(session, &cmd)?;
-    if code != 0 {
-        return Err(if err.trim().is_empty() {
-            format!("Command failed with exit code {code}")
-        } else {
-            err.trim().to_string()
-        });
     }
     Ok(())
 }
@@ -499,4 +525,21 @@ fn exec(session: &Session, command: &str) -> Result<(i32, String, String), Strin
         .map_err(|e| format!("wait_close: {e}"))?;
     let code = channel.exit_status().map_err(|e| format!("exit_status: {e}"))?;
     Ok((code, stdout, stderr))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn op_mode_labels() {
+        assert_eq!(OpMode::Copy.label(), "CP");
+        assert_eq!(OpMode::Move.label(), "MV");
+    }
+
+    #[test]
+    fn pane_side_equality() {
+        assert_eq!(PaneSide::Left, PaneSide::Left);
+        assert_ne!(PaneSide::Left, PaneSide::Right);
+    }
 }

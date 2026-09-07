@@ -1,10 +1,13 @@
 //! Application state machine.
 
 use eframe::egui::{self, FontFamily, FontId, RichText, TextStyle};
+use log::{info, warn};
 
-use crate::ssh_worker::{
+use ssh_split_pane::ops;
+use ssh_split_pane::ssh_worker::{
     OpMode, PaneSide, WorkerEvent, WorkerHandle, WorkerRequest,
 };
+
 use crate::ui::connect::ConnectForm;
 use crate::ui::menu;
 use crate::ui::pane::{self, PaneState};
@@ -44,6 +47,8 @@ pub struct App {
     overwrite: Option<OverwritePrompt>,
     new_folder: Option<NewFolderPrompt>,
     show_about: bool,
+    /// Previous frame maximized flag — used to force a full redraw on toggle.
+    was_maximized: bool,
 }
 
 impl App {
@@ -63,6 +68,7 @@ impl App {
             overwrite: None,
             new_folder: None,
             show_about: false,
+            was_maximized: false,
         }
     }
 
@@ -84,11 +90,13 @@ impl App {
                     self.connect.port.trim()
                 );
                 self.status = format!("Connected. Home: {home}");
+                info!("UI connected to {} home={home}", self.host_label);
                 self.busy = false;
                 self.request_list(PaneSide::Left, home.clone());
                 self.request_list(PaneSide::Right, home);
             }
             WorkerEvent::ConnectFailed(msg) => {
+                warn!("UI connect failed: {msg}");
                 self.connect.on_connect_failed(msg);
                 self.busy = false;
             }
@@ -187,12 +195,14 @@ impl App {
             PaneSide::Left => self.right.cwd.clone(),
             PaneSide::Right => self.left.cwd.clone(),
         };
-        if path_parent_eq(&src_path, &dst_dir) {
-            self.status = "Source and destination are the same directory".into();
+        if ops::is_same_directory_transfer(&src_path, &dst_dir) {
+            self.status = ops::OpsError::SameDirectory.to_string();
+            warn!("{}", self.status);
             return;
         }
         self.busy = true;
         self.status = format!("{} {} → {}", self.mode.label(), src_path, dst_dir);
+        info!("start transfer: {}", self.status);
         self.worker.send(WorkerRequest::CheckExists {
             src: src_path,
             dst_dir,
@@ -207,6 +217,7 @@ impl App {
         }
         let parent = self.pane_mut(side).cwd.clone();
         self.active_pane = side;
+        info!("open new-folder dialog side={side:?} parent={parent}");
         self.new_folder = Some(NewFolderPrompt {
             side,
             parent,
@@ -219,22 +230,17 @@ impl App {
         let Some(prompt) = &self.new_folder else {
             return;
         };
+        if let Err(e) = ops::validate_folder_name(&prompt.name) {
+            if let Some(p) = &mut self.new_folder {
+                p.error = Some(e.to_string());
+            }
+            return;
+        }
         let name = prompt.name.trim().to_string();
-        if name.is_empty() {
-            if let Some(p) = &mut self.new_folder {
-                p.error = Some("Folder name cannot be empty".into());
-            }
-            return;
-        }
-        if name.contains('/') || name == "." || name == ".." {
-            if let Some(p) = &mut self.new_folder {
-                p.error = Some("Invalid folder name".into());
-            }
-            return;
-        }
         let side = prompt.side;
         let parent = prompt.parent.clone();
         self.busy = true;
+        info!("mkdir request side={side:?} parent={parent} name={name}");
         self.worker.send(WorkerRequest::Mkdir {
             side,
             parent,
@@ -258,13 +264,13 @@ impl App {
                 ui.set_min_width(360.0);
                 ui.label(RichText::new(format!(
                     "Target already exists:\n{existing}\n\nOverwrite?"
-                )).size(16.0));
+                )).size(18.0));
                 ui.add_space(12.0);
                 ui.horizontal(|ui| {
                     if ui
                         .add(
-                            egui::Button::new(RichText::new("Overwrite").size(16.0))
-                                .min_size(egui::vec2(110.0, 34.0)),
+                            egui::Button::new(RichText::new("Overwrite").size(18.0))
+                                .min_size(egui::vec2(120.0, 38.0)),
                         )
                         .clicked()
                     {
@@ -272,8 +278,8 @@ impl App {
                     }
                     if ui
                         .add(
-                            egui::Button::new(RichText::new("Cancel").size(16.0))
-                                .min_size(egui::vec2(100.0, 34.0)),
+                            egui::Button::new(RichText::new("Cancel").size(18.0))
+                                .min_size(egui::vec2(110.0, 38.0)),
                         )
                         .clicked()
                     {
@@ -316,9 +322,9 @@ impl App {
             .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
             .show(ctx, |ui| {
                 ui.set_min_width(420.0);
-                ui.label(RichText::new(format!("Parent: {parent}")).size(15.0));
+                ui.label(RichText::new(format!("Parent: {parent}")).size(17.0));
                 ui.add_space(8.0);
-                ui.label(RichText::new("Folder name").size(16.0));
+                ui.label(RichText::new("Folder name").size(18.0));
                 let resp = ui.add(
                     egui::TextEdit::singleline(
                         &mut self.new_folder.as_mut().unwrap().name,
@@ -338,8 +344,8 @@ impl App {
                     if ui
                         .add_enabled(
                             !self.busy,
-                            egui::Button::new(RichText::new("Create").size(16.0))
-                                .min_size(egui::vec2(100.0, 34.0)),
+                            egui::Button::new(RichText::new("Create").size(18.0))
+                                .min_size(egui::vec2(110.0, 38.0)),
                         )
                         .clicked()
                     {
@@ -347,8 +353,8 @@ impl App {
                     }
                     if ui
                         .add(
-                            egui::Button::new(RichText::new("Cancel").size(16.0))
-                                .min_size(egui::vec2(100.0, 34.0)),
+                            egui::Button::new(RichText::new("Cancel").size(18.0))
+                                .min_size(egui::vec2(110.0, 38.0)),
                         )
                         .clicked()
                     {
@@ -375,19 +381,19 @@ impl App {
             .show(ctx, |ui| {
                 ui.set_min_width(400.0);
                 ui.heading("SSH Split Pane");
-                ui.label(RichText::new("v0.1.0").size(15.0));
+                ui.label(RichText::new("v0.1.0").size(17.0));
                 ui.add_space(8.0);
                 ui.label(
                     RichText::new(
                         "Remote dual-pane file manager.\nDrag between panes to CP/MV on the same SSH host.",
                     )
-                    .size(16.0),
+                    .size(18.0),
                 );
                 ui.add_space(12.0);
                 if ui
                     .add(
-                        egui::Button::new(RichText::new("OK").size(16.0))
-                            .min_size(egui::vec2(80.0, 34.0)),
+                        egui::Button::new(RichText::new("OK").size(18.0))
+                            .min_size(egui::vec2(88.0, 38.0)),
                     )
                     .clicked()
                 {
@@ -428,128 +434,172 @@ impl App {
 fn apply_large_style(ctx: &egui::Context) {
     let mut style = (*ctx.style()).clone();
     style.text_styles = [
-        (TextStyle::Small, FontId::new(13.0, FontFamily::Proportional)),
-        (TextStyle::Body, FontId::new(16.0, FontFamily::Proportional)),
-        (TextStyle::Button, FontId::new(16.0, FontFamily::Proportional)),
-        (TextStyle::Heading, FontId::new(24.0, FontFamily::Proportional)),
-        (TextStyle::Monospace, FontId::new(15.0, FontFamily::Monospace)),
+        (TextStyle::Small, FontId::new(15.0, FontFamily::Proportional)),
+        (TextStyle::Body, FontId::new(18.0, FontFamily::Proportional)),
+        (TextStyle::Button, FontId::new(18.0, FontFamily::Proportional)),
+        (TextStyle::Heading, FontId::new(28.0, FontFamily::Proportional)),
+        (TextStyle::Monospace, FontId::new(17.0, FontFamily::Monospace)),
     ]
     .into();
     style.spacing.item_spacing = egui::vec2(10.0, 8.0);
     style.spacing.button_padding = egui::vec2(12.0, 8.0);
-    style.spacing.interact_size = egui::vec2(48.0, 28.0);
+    style.spacing.interact_size = egui::vec2(52.0, 30.0);
     style.spacing.window_margin = egui::Margin::same(14.0);
     style.spacing.menu_margin = egui::Margin::same(8.0);
     style.spacing.indent = 22.0;
-    style.visuals.widgets.noninteractive.expansion = 1.0;
-    style.visuals.widgets.inactive.expansion = 1.0;
-    style.visuals.widgets.hovered.expansion = 2.0;
-    style.visuals.widgets.active.expansion = 2.0;
+    // Keep expansion at 0 so widget strokes cannot paint outside the
+    // allocated rect — that leftover stroke looks like a pre-maximize outline.
+    style.visuals.widgets.noninteractive.expansion = 0.0;
+    style.visuals.widgets.inactive.expansion = 0.0;
+    style.visuals.widgets.hovered.expansion = 0.0;
+    style.visuals.widgets.active.expansion = 0.0;
+    style.visuals.window_stroke = egui::Stroke::NONE;
     ctx.set_style(style);
 }
 
-fn path_parent_eq(src: &str, dst_dir: &str) -> bool {
-    crate::pathutil::parent(src) == dst_dir.trim_end_matches('/')
-        || crate::pathutil::parent(src) == dst_dir
-}
-
 impl eframe::App for App {
+    fn clear_color(&self, visuals: &egui::Visuals) -> [f32; 4] {
+        // Fully clear the surface each frame so a maximized resize cannot leave
+        // the previous window's outline in uncleared framebuffer pixels.
+        visuals.panel_fill.to_normalized_gamma_f32()
+    }
+
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        let maximized = ctx.input(|i| i.viewport().maximized.unwrap_or(false));
+        if maximized != self.was_maximized {
+            self.was_maximized = maximized;
+            // Resize/maximize can leave one stale frame of the old outer stroke.
+            ctx.request_repaint();
+        }
+
         self.poll_worker();
         self.show_overwrite_modal(ctx);
         self.show_new_folder_modal(ctx);
         self.show_about_modal(ctx);
 
-        egui::TopBottomPanel::top("menubar").show(ctx, |ui| {
-            let connected = self.screen == Screen::Browser;
-            let actions = menu::show_menu_bar(
-                ui,
-                connected,
-                self.busy,
-                self.mode,
-                self.active_pane,
-            );
-            self.apply_menu_actions(actions, ctx);
-        });
+        let panel_frame = |inner: egui::Margin| {
+            egui::Frame::none()
+                .fill(ctx.style().visuals.panel_fill)
+                .inner_margin(inner)
+                .stroke(egui::Stroke::NONE)
+        };
+
+        egui::TopBottomPanel::top("menubar")
+            .frame(panel_frame(egui::Margin::symmetric(8.0, 4.0)))
+            .show(ctx, |ui| {
+                let connected = self.screen == Screen::Browser;
+                let actions = menu::show_menu_bar(
+                    ui,
+                    connected,
+                    self.busy,
+                    self.mode,
+                    self.active_pane,
+                );
+                self.apply_menu_actions(actions, ctx);
+            });
 
         match self.screen {
             Screen::Connect => {
                 self.connect.show(ctx, &self.worker);
             }
             Screen::Browser => {
-                egui::TopBottomPanel::top("toolbar").show(ctx, |ui| {
-                    let r = toolbar::show_toolbar(
-                        ui,
-                        &mut self.mode,
-                        &self.host_label,
-                        self.busy,
-                    );
-                    if r.disconnect {
-                        self.worker.send(WorkerRequest::Disconnect);
-                    }
-                });
+                egui::TopBottomPanel::top("toolbar")
+                    .frame(panel_frame(egui::Margin::symmetric(8.0, 4.0)))
+                    .show(ctx, |ui| {
+                        let r = toolbar::show_toolbar(
+                            ui,
+                            &mut self.mode,
+                            &self.host_label,
+                            self.busy,
+                        );
+                        if r.disconnect {
+                            self.worker.send(WorkerRequest::Disconnect);
+                        }
+                    });
 
                 egui::TopBottomPanel::bottom("status")
-                    .exact_height(36.0)
+                    .exact_height(40.0)
+                    .frame(panel_frame(egui::Margin::symmetric(8.0, 4.0)))
                     .show(ctx, |ui| {
                         ui.horizontal_centered(|ui| {
                             if self.busy {
                                 ui.spinner();
                             }
-                            ui.label(RichText::new(&self.status).size(15.0));
+                            ui.label(RichText::new(&self.status).size(17.0));
                         });
                     });
 
-                egui::CentralPanel::default().show(ctx, |ui| {
-                    let avail = ui.available_width();
-                    let half = (avail - 12.0) / 2.0;
+                // When maximized, drop central inset so no pre-maximize rim remains.
+                let central_margin = if maximized {
+                    egui::Margin::same(4.0)
+                } else {
+                    egui::Margin::same(8.0)
+                };
+                egui::CentralPanel::default()
+                    .frame(panel_frame(central_margin))
+                    .show(ctx, |ui| {
+                        let full = ui.available_size();
+                        ui.set_min_size(full);
+                        let avail = ui.available_width();
+                        let half = ((avail - 12.0) / 2.0).max(120.0);
+                        let height = ui.available_height();
 
-                    ui.horizontal(|ui| {
-                        ui.allocate_ui_with_layout(
-                            egui::vec2(half, ui.available_height()),
-                            egui::Layout::top_down(egui::Align::Min),
-                            |ui| {
-                                let action = pane::show_pane(ui, &mut self.left, !self.busy);
-                                if action.activated {
-                                    self.active_pane = PaneSide::Left;
-                                }
-                                if let Some(path) = action.go_path {
-                                    self.active_pane = PaneSide::Left;
-                                    self.request_list(PaneSide::Left, path);
-                                }
-                                if action.new_folder {
-                                    self.open_new_folder_dialog(PaneSide::Left);
-                                }
-                                if let Some(payload) = action.drop {
-                                    self.start_transfer(payload.side, payload.remote_path);
-                                }
-                            },
-                        );
+                        ui.horizontal(|ui| {
+                            ui.allocate_ui_with_layout(
+                                egui::vec2(half, height),
+                                egui::Layout::top_down(egui::Align::Min),
+                                |ui| {
+                                    ui.set_min_size(ui.available_size());
+                                    let action =
+                                        pane::show_pane(ui, &mut self.left, !self.busy);
+                                    if action.activated {
+                                        self.active_pane = PaneSide::Left;
+                                    }
+                                    if let Some(path) = action.go_path {
+                                        self.active_pane = PaneSide::Left;
+                                        self.request_list(PaneSide::Left, path);
+                                    }
+                                    if action.new_folder {
+                                        self.open_new_folder_dialog(PaneSide::Left);
+                                    }
+                                    if let Some(payload) = action.drop {
+                                        self.start_transfer(
+                                            payload.side,
+                                            payload.remote_path,
+                                        );
+                                    }
+                                },
+                            );
 
-                        ui.separator();
+                            ui.separator();
 
-                        ui.allocate_ui_with_layout(
-                            egui::vec2(half, ui.available_height()),
-                            egui::Layout::top_down(egui::Align::Min),
-                            |ui| {
-                                let action = pane::show_pane(ui, &mut self.right, !self.busy);
-                                if action.activated {
-                                    self.active_pane = PaneSide::Right;
-                                }
-                                if let Some(path) = action.go_path {
-                                    self.active_pane = PaneSide::Right;
-                                    self.request_list(PaneSide::Right, path);
-                                }
-                                if action.new_folder {
-                                    self.open_new_folder_dialog(PaneSide::Right);
-                                }
-                                if let Some(payload) = action.drop {
-                                    self.start_transfer(payload.side, payload.remote_path);
-                                }
-                            },
-                        );
+                            ui.allocate_ui_with_layout(
+                                egui::vec2(half, height),
+                                egui::Layout::top_down(egui::Align::Min),
+                                |ui| {
+                                    ui.set_min_size(ui.available_size());
+                                    let action =
+                                        pane::show_pane(ui, &mut self.right, !self.busy);
+                                    if action.activated {
+                                        self.active_pane = PaneSide::Right;
+                                    }
+                                    if let Some(path) = action.go_path {
+                                        self.active_pane = PaneSide::Right;
+                                        self.request_list(PaneSide::Right, path);
+                                    }
+                                    if action.new_folder {
+                                        self.open_new_folder_dialog(PaneSide::Right);
+                                    }
+                                    if let Some(payload) = action.drop {
+                                        self.start_transfer(
+                                            payload.side,
+                                            payload.remote_path,
+                                        );
+                                    }
+                                },
+                            );
+                        });
                     });
-                });
             }
         }
 

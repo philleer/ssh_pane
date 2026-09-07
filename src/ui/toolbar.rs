@@ -2,7 +2,7 @@
 
 use egui::{RichText, Vec2};
 
-use crate::ssh_worker::OpMode;
+use ssh_split_pane::ssh_worker::OpMode;
 use crate::ui::connect::mode_button;
 
 pub struct ToolbarResult {
@@ -19,7 +19,7 @@ pub fn show_toolbar(
 
     ui.add_space(4.0);
     ui.horizontal(|ui| {
-        ui.label(RichText::new("Mode:").strong().size(17.0));
+        ui.label(RichText::new("Mode:").strong().size(19.0));
         if mode_button(ui, "CP", *mode == OpMode::Copy).clicked() && !busy {
             *mode = OpMode::Copy;
         }
@@ -31,19 +31,19 @@ pub fn show_toolbar(
             OpMode::Copy => "Drag to copy on remote",
             OpMode::Move => "Drag to move on remote",
         })
-        .size(16.0));
+        .size(18.0));
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             if ui
                 .add_enabled(
                     !busy,
-                    egui::Button::new(RichText::new("Disconnect").size(16.0))
-                        .min_size(Vec2::new(110.0, 34.0)),
+                    egui::Button::new(RichText::new("Disconnect").size(18.0))
+                        .min_size(Vec2::new(120.0, 38.0)),
                 )
                 .clicked()
             {
                 disconnect = true;
             }
-            ui.label(RichText::new(host_label).size(16.0));
+            ui.label(RichText::new(host_label).size(18.0));
         });
     });
     ui.add_space(4.0);

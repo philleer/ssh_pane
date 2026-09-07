@@ -1,6 +1,6 @@
 //! Menu bar: File / View / Help.
 
-use crate::ssh_worker::{OpMode, PaneSide};
+use ssh_split_pane::ssh_worker::{OpMode, PaneSide};
 
 #[derive(Default)]
 pub struct MenuActions {

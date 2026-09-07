@@ -2,7 +2,7 @@
 
 use egui::{Align, Layout, RichText};
 
-use crate::ssh_worker::{ConnectParams, WorkerHandle, WorkerRequest};
+use ssh_split_pane::ssh_worker::{ConnectParams, WorkerHandle, WorkerRequest};
 
 #[derive(Default)]
 pub struct ConnectForm {
@@ -35,12 +35,12 @@ impl ConnectForm {
         egui::CentralPanel::default().show(ctx, |ui| {
             ui.vertical_centered(|ui| {
                 ui.add_space(48.0);
-                ui.heading(RichText::new("SSH Split Pane").size(32.0));
+                ui.heading(RichText::new("SSH Split Pane").size(34.0));
                 ui.label(
                     RichText::new(
                         "Connect to a remote host, then drag files between panes to CP/MV.",
                     )
-                    .size(16.0),
+                    .size(18.0),
                 );
                 ui.add_space(28.0);
             });
@@ -53,7 +53,7 @@ impl ConnectForm {
                         .num_columns(2)
                         .spacing([16.0, 12.0])
                         .show(ui, |ui| {
-                            ui.label(RichText::new("Host").size(16.0));
+                            ui.label(RichText::new("Host").size(18.0));
                             ui.add(
                                 egui::TextEdit::singleline(&mut self.host)
                                     .desired_width(320.0)
@@ -62,7 +62,7 @@ impl ConnectForm {
                             );
                             ui.end_row();
 
-                            ui.label(RichText::new("Port").size(16.0));
+                            ui.label(RichText::new("Port").size(18.0));
                             ui.add(
                                 egui::TextEdit::singleline(&mut self.port)
                                     .desired_width(100.0)
@@ -71,7 +71,7 @@ impl ConnectForm {
                             );
                             ui.end_row();
 
-                            ui.label(RichText::new("User").size(16.0));
+                            ui.label(RichText::new("User").size(18.0));
                             ui.add(
                                 egui::TextEdit::singleline(&mut self.user)
                                     .desired_width(320.0)
@@ -79,7 +79,7 @@ impl ConnectForm {
                             );
                             ui.end_row();
 
-                            ui.label(RichText::new("Password").size(16.0));
+                            ui.label(RichText::new("Password").size(18.0));
                             ui.add(
                                 egui::TextEdit::singleline(&mut self.password)
                                     .password(true)
@@ -88,7 +88,7 @@ impl ConnectForm {
                             );
                             ui.end_row();
 
-                            ui.label(RichText::new("Private key").size(16.0));
+                            ui.label(RichText::new("Private key").size(18.0));
                             ui.horizontal(|ui| {
                                 ui.add(
                                     egui::TextEdit::singleline(&mut self.private_key)
@@ -98,8 +98,8 @@ impl ConnectForm {
                                 );
                                 if ui
                                     .add(
-                                        egui::Button::new(RichText::new("Browse…").size(16.0))
-                                            .min_size(egui::vec2(96.0, 34.0)),
+                                        egui::Button::new(RichText::new("Browse…").size(18.0))
+                                            .min_size(egui::vec2(104.0, 38.0)),
                                     )
                                     .clicked()
                                 {
@@ -125,8 +125,8 @@ impl ConnectForm {
                         if ui
                             .add_enabled(
                                 can_connect,
-                                egui::Button::new(RichText::new("Connect").size(18.0))
-                                    .min_size(egui::vec2(120.0, 40.0)),
+                                egui::Button::new(RichText::new("Connect").size(20.0))
+                                    .min_size(egui::vec2(128.0, 44.0)),
                             )
                             .clicked()
                         {
@@ -144,7 +144,7 @@ impl ConnectForm {
                         }
                         if self.connecting {
                             ui.spinner();
-                            ui.label(RichText::new("Connecting…").size(16.0));
+                            ui.label(RichText::new("Connecting…").size(18.0));
                         }
                     });
                 });
@@ -193,11 +193,11 @@ impl ConnectForm {
 /// Highlighted mode button.
 pub fn mode_button(ui: &mut egui::Ui, label: &str, selected: bool) -> egui::Response {
     let text = if selected {
-        RichText::new(label).strong().size(20.0)
+        RichText::new(label).strong().size(22.0)
     } else {
-        RichText::new(label).size(18.0)
+        RichText::new(label).size(20.0)
     };
-    let mut btn = egui::Button::new(text).min_size(egui::vec2(64.0, 36.0));
+    let mut btn = egui::Button::new(text).min_size(egui::vec2(72.0, 40.0));
     if selected {
         btn = btn.fill(egui::Color32::from_rgb(40, 110, 180));
     }

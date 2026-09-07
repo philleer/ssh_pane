@@ -2,8 +2,8 @@
 
 use egui::{Id, RichText, Vec2};
 
-use crate::pathutil;
-use crate::ssh_worker::{PaneSide, RemoteEntry};
+use ssh_split_pane::pathutil;
+use ssh_split_pane::ssh_worker::{PaneSide, RemoteEntry};
 
 /// Payload carried during an egui drag.
 #[derive(Clone, Debug)]
@@ -66,15 +66,33 @@ pub fn show_pane(ui: &mut egui::Ui, pane: &mut PaneState, allow_dnd: bool) -> Pa
         PaneSide::Right => "Right",
     };
 
-    let frame = egui::Frame::group(ui.style()).inner_margin(egui::Margin::same(10.0));
+    // Fill the allocated dual-pane slot so the frame grows with maximize
+    // instead of leaving the old content-sized outline behind.
+    let avail = ui.available_size();
+    ui.set_min_size(avail);
+
+    let maximized = ui.input(|i| i.viewport().maximized.unwrap_or(false));
+    let stroke = if maximized {
+        // Maximized: no group stroke — old Frame::group outline was the "pre-maximize rim".
+        egui::Stroke::NONE
+    } else {
+        ui.visuals().widgets.noninteractive.bg_stroke
+    };
+    let frame = egui::Frame::none()
+        .fill(ui.visuals().extreme_bg_color)
+        .stroke(stroke)
+        .rounding(if maximized { 0.0 } else { 6.0 })
+        .inner_margin(egui::Margin::same(12.0));
+
     frame.show(ui, |ui| {
+        ui.set_min_size(ui.available_size());
         ui.horizontal(|ui| {
             ui.heading(title);
             ui.add_space(8.0);
             if ui
                 .add_enabled(
                     !pane.loading,
-                    egui::Button::new(RichText::new("⬆ Up").size(16.0)).min_size(Vec2::new(64.0, 32.0)),
+                    egui::Button::new(RichText::new("⬆ Up").size(18.0)).min_size(Vec2::new(72.0, 36.0)),
                 )
                 .clicked()
             {
@@ -83,7 +101,7 @@ pub fn show_pane(ui: &mut egui::Ui, pane: &mut PaneState, allow_dnd: bool) -> Pa
             if ui
                 .add_enabled(
                     !pane.loading,
-                    egui::Button::new(RichText::new("⟳").size(16.0)).min_size(Vec2::new(40.0, 32.0)),
+                    egui::Button::new(RichText::new("⟳").size(18.0)).min_size(Vec2::new(44.0, 36.0)),
                 )
                 .on_hover_text("Refresh")
                 .clicked()
@@ -93,8 +111,8 @@ pub fn show_pane(ui: &mut egui::Ui, pane: &mut PaneState, allow_dnd: bool) -> Pa
             if ui
                 .add_enabled(
                     !pane.loading && allow_dnd,
-                    egui::Button::new(RichText::new("+ Folder").size(16.0))
-                        .min_size(Vec2::new(96.0, 32.0)),
+                    egui::Button::new(RichText::new("+ Folder").size(18.0))
+                        .min_size(Vec2::new(108.0, 36.0)),
                 )
                 .on_hover_text("Create a new folder here")
                 .clicked()
@@ -116,12 +134,12 @@ pub fn show_pane(ui: &mut egui::Ui, pane: &mut PaneState, allow_dnd: bool) -> Pa
             let enter = resp.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
             if enter
                 || ui
-                    .add(egui::Button::new(RichText::new("Go").size(16.0)).min_size(Vec2::new(56.0, 32.0)))
+                    .add(egui::Button::new(RichText::new("Go").size(18.0)).min_size(Vec2::new(60.0, 36.0)))
                     .clicked()
             {
                 let p = pane.path_edit.trim();
                 if !p.is_empty() {
-                    action.go_path = Some(normalize_path(p));
+                    action.go_path = Some(pathutil::normalize(p));
                 }
             }
         });
@@ -129,7 +147,7 @@ pub fn show_pane(ui: &mut egui::Ui, pane: &mut PaneState, allow_dnd: bool) -> Pa
         if pane.loading {
             ui.horizontal(|ui| {
                 ui.spinner();
-                ui.label(RichText::new("Loading…").size(16.0));
+                ui.label(RichText::new("Loading…").size(18.0));
             });
         }
         if let Some(err) = &pane.error {
@@ -151,7 +169,7 @@ pub fn show_pane(ui: &mut egui::Ui, pane: &mut PaneState, allow_dnd: bool) -> Pa
                 ui.set_min_width(ui.available_width());
 
                 if pane.entries.is_empty() && !pane.loading {
-                    ui.weak(RichText::new("(empty)").size(16.0));
+                    ui.weak(RichText::new("(empty)").size(18.0));
                 }
 
                 for entry in &pane.entries {
@@ -164,8 +182,8 @@ pub fn show_pane(ui: &mut egui::Ui, pane: &mut PaneState, allow_dnd: bool) -> Pa
 
                     let selected = pane.selected.as_deref() == Some(entry.name.as_str());
                     let resp = ui.add_sized(
-                        [ui.available_width(), 32.0],
-                        egui::SelectableLabel::new(selected, RichText::new(label).size(17.0)),
+                        [ui.available_width(), 36.0],
+                        egui::SelectableLabel::new(selected, RichText::new(label).size(19.0)),
                     );
 
                     if resp.clicked() {
@@ -213,36 +231,6 @@ pub fn show_pane(ui: &mut egui::Ui, pane: &mut PaneState, allow_dnd: bool) -> Pa
     });
 
     action
-}
-
-fn normalize_path(p: &str) -> String {
-    let p = p.trim().trim_end_matches('/');
-    if p.is_empty() {
-        return "/".into();
-    }
-    let s = if p.starts_with('/') {
-        p.to_string()
-    } else {
-        format!("/{p}")
-    };
-    let mut out = String::with_capacity(s.len());
-    let mut prev_slash = false;
-    for ch in s.chars() {
-        if ch == '/' {
-            if !prev_slash {
-                out.push('/');
-            }
-            prev_slash = true;
-        } else {
-            out.push(ch);
-            prev_slash = false;
-        }
-    }
-    if out.is_empty() {
-        "/".into()
-    } else {
-        out
-    }
 }
 
 fn format_size(n: u64) -> String {
