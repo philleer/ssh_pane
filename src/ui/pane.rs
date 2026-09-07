@@ -242,7 +242,6 @@ pub fn show_pane(ui: &mut egui::Ui, pane: &mut PaneState, allow_dnd: bool) -> Pa
             }
 
             ui.add_space(6.0);
-            ui.label(RichText::new("Filter").size(14.0));
             ui.add(
                 egui::TextEdit::singleline(&mut pane.filter)
                     .desired_width(120.0)
