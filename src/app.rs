@@ -454,13 +454,13 @@ fn apply_large_style(ctx: &egui::Context) {
     style.visuals.widgets.hovered.expansion = 0.0;
     style.visuals.widgets.active.expansion = 0.0;
     style.visuals.window_stroke = egui::Stroke::NONE;
+    style.visuals.window_shadow = egui::epaint::Shadow::NONE;
+    style.visuals.popup_shadow = egui::epaint::Shadow::NONE;
     ctx.set_style(style);
 }
 
 impl eframe::App for App {
     fn clear_color(&self, visuals: &egui::Visuals) -> [f32; 4] {
-        // Fully clear the surface each frame so a maximized resize cannot leave
-        // the previous window's outline in uncleared framebuffer pixels.
         visuals.panel_fill.to_normalized_gamma_f32()
     }
 
@@ -468,8 +468,9 @@ impl eframe::App for App {
         let maximized = ctx.input(|i| i.viewport().maximized.unwrap_or(false));
         if maximized != self.was_maximized {
             self.was_maximized = maximized;
-            // Resize/maximize can leave one stale frame of the old outer stroke.
             ctx.request_repaint();
+            ctx.request_repaint_after(std::time::Duration::from_millis(16));
+            ctx.request_repaint_after(std::time::Duration::from_millis(50));
         }
 
         self.poll_worker();
@@ -477,15 +478,30 @@ impl eframe::App for App {
         self.show_new_folder_modal(ctx);
         self.show_about_modal(ctx);
 
-        let panel_frame = |inner: egui::Margin| {
-            egui::Frame::none()
-                .fill(ctx.style().visuals.panel_fill)
-                .inner_margin(inner)
-                .stroke(egui::Stroke::NONE)
-        };
+        let fill = ctx.style().visuals.panel_fill;
+        let flat = egui::Frame::none()
+            .fill(fill)
+            .stroke(egui::Stroke::NONE)
+            .rounding(0.0)
+            .inner_margin(egui::Margin::ZERO)
+            .outer_margin(egui::Margin::ZERO);
+
+        // Custom chrome — OS decorations are disabled in main.rs so CSD/DWM
+        // drop-shadows cannot linger as a pre-maximize outline.
+        egui::TopBottomPanel::top("titlebar")
+            .exact_height(36.0)
+            .frame(flat)
+            .show(ctx, |ui| {
+                crate::ui::titlebar::show(ui, "SSH Split Pane", maximized);
+            });
 
         egui::TopBottomPanel::top("menubar")
-            .frame(panel_frame(egui::Margin::symmetric(8.0, 4.0)))
+            .frame(
+                egui::Frame::none()
+                    .fill(fill)
+                    .stroke(egui::Stroke::NONE)
+                    .inner_margin(egui::Margin::symmetric(8.0, 4.0)),
+            )
             .show(ctx, |ui| {
                 let connected = self.screen == Screen::Browser;
                 let actions = menu::show_menu_bar(
@@ -504,7 +520,12 @@ impl eframe::App for App {
             }
             Screen::Browser => {
                 egui::TopBottomPanel::top("toolbar")
-                    .frame(panel_frame(egui::Margin::symmetric(8.0, 4.0)))
+                    .frame(
+                        egui::Frame::none()
+                            .fill(fill)
+                            .stroke(egui::Stroke::NONE)
+                            .inner_margin(egui::Margin::symmetric(8.0, 4.0)),
+                    )
                     .show(ctx, |ui| {
                         let r = toolbar::show_toolbar(
                             ui,
@@ -519,7 +540,12 @@ impl eframe::App for App {
 
                 egui::TopBottomPanel::bottom("status")
                     .exact_height(40.0)
-                    .frame(panel_frame(egui::Margin::symmetric(8.0, 4.0)))
+                    .frame(
+                        egui::Frame::none()
+                            .fill(fill)
+                            .stroke(egui::Stroke::NONE)
+                            .inner_margin(egui::Margin::symmetric(8.0, 4.0)),
+                    )
                     .show(ctx, |ui| {
                         ui.horizontal_centered(|ui| {
                             if self.busy {
@@ -529,14 +555,30 @@ impl eframe::App for App {
                         });
                     });
 
-                // When maximized, drop central inset so no pre-maximize rim remains.
                 let central_margin = if maximized {
-                    egui::Margin::same(4.0)
+                    egui::Margin::same(2.0)
                 } else {
                     egui::Margin::same(8.0)
                 };
+                let central_frame = if maximized {
+                    egui::Frame::none()
+                        .fill(fill)
+                        .stroke(egui::Stroke::NONE)
+                        .rounding(0.0)
+                        .inner_margin(central_margin)
+                } else {
+                    egui::Frame::none()
+                        .fill(fill)
+                        .stroke(egui::Stroke::new(
+                            1.0_f32,
+                            ctx.style().visuals.widgets.noninteractive.bg_stroke.color,
+                        ))
+                        .rounding(0.0)
+                        .inner_margin(central_margin)
+                };
+
                 egui::CentralPanel::default()
-                    .frame(panel_frame(central_margin))
+                    .frame(central_frame)
                     .show(ctx, |ui| {
                         let full = ui.available_size();
                         ui.set_min_size(full);

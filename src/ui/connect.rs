@@ -31,122 +31,135 @@ impl ConnectForm {
     /// Returns true if connect was requested this frame.
     pub fn show(&mut self, ctx: &egui::Context, worker: &WorkerHandle) -> bool {
         let mut requested = false;
-
-        egui::CentralPanel::default().show(ctx, |ui| {
-            ui.vertical_centered(|ui| {
-                ui.add_space(48.0);
-                ui.heading(RichText::new("SSH Split Pane").size(34.0));
-                ui.label(
-                    RichText::new(
-                        "Connect to a remote host, then drag files between panes to CP/MV.",
-                    )
-                    .size(18.0),
-                );
-                ui.add_space(28.0);
+        egui::CentralPanel::default()
+            .frame(
+                egui::Frame::none()
+                    .fill(ctx.style().visuals.panel_fill)
+                    .stroke(egui::Stroke::NONE),
+            )
+            .show(ctx, |ui| {
+                requested = self.show_in(ui, worker);
             });
+        requested
+    }
 
-            ui.horizontal(|ui| {
-                ui.add_space(ui.available_width() * 0.18);
-                ui.vertical(|ui| {
-                    ui.set_max_width(480.0);
-                    egui::Grid::new("connect_grid")
-                        .num_columns(2)
-                        .spacing([16.0, 12.0])
-                        .show(ui, |ui| {
-                            ui.label(RichText::new("Host").size(18.0));
+    /// Draw the connect form into an existing `Ui`.
+    pub fn show_in(&mut self, ui: &mut egui::Ui, worker: &WorkerHandle) -> bool {
+        let mut requested = false;
+
+        ui.vertical_centered(|ui| {
+            ui.add_space(48.0);
+            ui.heading(RichText::new("SSH Split Pane").size(34.0));
+            ui.label(
+                RichText::new(
+                    "Connect to a remote host, then drag files between panes to CP/MV.",
+                )
+                .size(18.0),
+            );
+            ui.add_space(28.0);
+        });
+
+        ui.horizontal(|ui| {
+            ui.add_space(ui.available_width() * 0.18);
+            ui.vertical(|ui| {
+                ui.set_max_width(480.0);
+                egui::Grid::new("connect_grid")
+                    .num_columns(2)
+                    .spacing([16.0, 12.0])
+                    .show(ui, |ui| {
+                        ui.label(RichText::new("Host").size(18.0));
+                        ui.add(
+                            egui::TextEdit::singleline(&mut self.host)
+                                .desired_width(320.0)
+                                .margin(egui::Margin::symmetric(10.0, 8.0))
+                                .hint_text("hostname or IP"),
+                        );
+                        ui.end_row();
+
+                        ui.label(RichText::new("Port").size(18.0));
+                        ui.add(
+                            egui::TextEdit::singleline(&mut self.port)
+                                .desired_width(100.0)
+                                .margin(egui::Margin::symmetric(10.0, 8.0))
+                                .hint_text("22"),
+                        );
+                        ui.end_row();
+
+                        ui.label(RichText::new("User").size(18.0));
+                        ui.add(
+                            egui::TextEdit::singleline(&mut self.user)
+                                .desired_width(320.0)
+                                .margin(egui::Margin::symmetric(10.0, 8.0)),
+                        );
+                        ui.end_row();
+
+                        ui.label(RichText::new("Password").size(18.0));
+                        ui.add(
+                            egui::TextEdit::singleline(&mut self.password)
+                                .password(true)
+                                .desired_width(320.0)
+                                .margin(egui::Margin::symmetric(10.0, 8.0)),
+                        );
+                        ui.end_row();
+
+                        ui.label(RichText::new("Private key").size(18.0));
+                        ui.horizontal(|ui| {
                             ui.add(
-                                egui::TextEdit::singleline(&mut self.host)
-                                    .desired_width(320.0)
+                                egui::TextEdit::singleline(&mut self.private_key)
+                                    .desired_width(240.0)
                                     .margin(egui::Margin::symmetric(10.0, 8.0))
-                                    .hint_text("hostname or IP"),
+                                    .hint_text("optional path"),
                             );
-                            ui.end_row();
-
-                            ui.label(RichText::new("Port").size(18.0));
-                            ui.add(
-                                egui::TextEdit::singleline(&mut self.port)
-                                    .desired_width(100.0)
-                                    .margin(egui::Margin::symmetric(10.0, 8.0))
-                                    .hint_text("22"),
-                            );
-                            ui.end_row();
-
-                            ui.label(RichText::new("User").size(18.0));
-                            ui.add(
-                                egui::TextEdit::singleline(&mut self.user)
-                                    .desired_width(320.0)
-                                    .margin(egui::Margin::symmetric(10.0, 8.0)),
-                            );
-                            ui.end_row();
-
-                            ui.label(RichText::new("Password").size(18.0));
-                            ui.add(
-                                egui::TextEdit::singleline(&mut self.password)
-                                    .password(true)
-                                    .desired_width(320.0)
-                                    .margin(egui::Margin::symmetric(10.0, 8.0)),
-                            );
-                            ui.end_row();
-
-                            ui.label(RichText::new("Private key").size(18.0));
-                            ui.horizontal(|ui| {
-                                ui.add(
-                                    egui::TextEdit::singleline(&mut self.private_key)
-                                        .desired_width(240.0)
-                                        .margin(egui::Margin::symmetric(10.0, 8.0))
-                                        .hint_text("optional path"),
-                                );
-                                if ui
-                                    .add(
-                                        egui::Button::new(RichText::new("Browse…").size(18.0))
-                                            .min_size(egui::vec2(104.0, 38.0)),
-                                    )
-                                    .clicked()
-                                {
-                                    if let Some(path) = rfd::FileDialog::new().pick_file() {
-                                        self.private_key = path.display().to_string();
-                                    }
-                                }
-                            });
-                            ui.end_row();
-                        });
-
-                    ui.add_space(20.0);
-
-                    if let Some(err) = &self.error {
-                        ui.colored_label(egui::Color32::from_rgb(220, 80, 80), err);
-                        ui.add_space(8.0);
-                    }
-
-                    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                        let can_connect = !self.connecting
-                            && !self.host.trim().is_empty()
-                            && !self.user.trim().is_empty();
-                        if ui
-                            .add_enabled(
-                                can_connect,
-                                egui::Button::new(RichText::new("Connect").size(20.0))
-                                    .min_size(egui::vec2(128.0, 44.0)),
-                            )
-                            .clicked()
-                        {
-                            match self.build_params() {
-                                Ok(params) => {
-                                    self.connecting = true;
-                                    self.error = None;
-                                    worker.send(WorkerRequest::Connect(params));
-                                    requested = true;
-                                }
-                                Err(e) => {
-                                    self.error = Some(e);
+                            if ui
+                                .add(
+                                    egui::Button::new(RichText::new("Browse…").size(18.0))
+                                        .min_size(egui::vec2(104.0, 38.0)),
+                                )
+                                .clicked()
+                            {
+                                if let Some(path) = rfd::FileDialog::new().pick_file() {
+                                    self.private_key = path.display().to_string();
                                 }
                             }
-                        }
-                        if self.connecting {
-                            ui.spinner();
-                            ui.label(RichText::new("Connecting…").size(18.0));
-                        }
+                        });
+                        ui.end_row();
                     });
+
+                ui.add_space(20.0);
+
+                if let Some(err) = &self.error {
+                    ui.colored_label(egui::Color32::from_rgb(220, 80, 80), err);
+                    ui.add_space(8.0);
+                }
+
+                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                    let can_connect = !self.connecting
+                        && !self.host.trim().is_empty()
+                        && !self.user.trim().is_empty();
+                    if ui
+                        .add_enabled(
+                            can_connect,
+                            egui::Button::new(RichText::new("Connect").size(20.0))
+                                .min_size(egui::vec2(128.0, 44.0)),
+                        )
+                        .clicked()
+                    {
+                        match self.build_params() {
+                            Ok(params) => {
+                                self.connecting = true;
+                                self.error = None;
+                                worker.send(WorkerRequest::Connect(params));
+                                requested = true;
+                            }
+                            Err(e) => {
+                                self.error = Some(e);
+                            }
+                        }
+                    }
+                    if self.connecting {
+                        ui.spinner();
+                        ui.label(RichText::new("Connecting…").size(18.0));
+                    }
                 });
             });
         });
