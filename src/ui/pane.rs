@@ -1,5 +1,6 @@
 //! Single pane: path bar + file list + drag/drop + optional image preview.
 
+use std::collections::BTreeSet;
 use std::sync::Arc;
 
 use egui::{CursorIcon, Id, RichText, Sense, Vec2};
@@ -25,7 +26,10 @@ pub struct PaneState {
     pub entries: Vec<RemoteEntry>,
     pub loading: bool,
     pub error: Option<String>,
-    pub selected: Option<String>,
+    /// Multi-select (Ctrl+click). Ordered for stable UI.
+    pub selected: BTreeSet<String>,
+    /// Last focused name (preview / primary highlight).
+    pub focus: Option<String>,
     /// Image preview toggle (OFF / ON).
     pub preview_enabled: bool,
     pub preview_loading: bool,
@@ -35,6 +39,8 @@ pub struct PaneState {
     pub preview_texture: Option<egui::TextureHandle>,
     /// Fraction of list+preview height used by the preview panel (0.2–0.75).
     pub preview_ratio: f32,
+    /// Case-insensitive substring filter for the file list.
+    pub filter: String,
 }
 
 impl PaneState {
@@ -46,23 +52,30 @@ impl PaneState {
             entries: Vec::new(),
             loading: false,
             error: None,
-            selected: None,
+            selected: BTreeSet::new(),
+            focus: None,
             preview_enabled: false,
             preview_loading: false,
             preview_error: None,
             preview_path: None,
             preview_texture: None,
             preview_ratio: 0.40,
+            filter: String::new(),
         }
     }
 
     pub fn set_path(&mut self, path: String) {
         if self.cwd != path {
-            self.selected = None;
+            self.clear_selection();
             self.clear_preview_content();
         }
         self.cwd = path.clone();
         self.path_edit = path;
+    }
+
+    pub fn clear_selection(&mut self) {
+        self.selected.clear();
+        self.focus = None;
     }
 
     pub fn clear_preview_content(&mut self) {
@@ -78,6 +91,36 @@ impl PaneState {
             self.clear_preview_content();
         }
     }
+
+    /// Drop selection entries that no longer exist after a refresh.
+    pub fn prune_selection(&mut self) {
+        let names: BTreeSet<_> = self.entries.iter().map(|e| e.name.clone()).collect();
+        self.selected.retain(|n| names.contains(n));
+        if let Some(f) = &self.focus {
+            if !self.selected.contains(f) {
+                self.focus = self.selected.iter().next().cloned();
+            }
+        }
+    }
+
+    pub fn selected_paths(&self) -> Vec<String> {
+        self.selected
+            .iter()
+            .map(|n| pathutil::join(&self.cwd, n))
+            .collect()
+    }
+
+    /// Entries visible under the current filter (case-insensitive substring).
+    pub fn filtered_entries(&self) -> Vec<&RemoteEntry> {
+        let needle = self.filter.trim().to_ascii_lowercase();
+        if needle.is_empty() {
+            return self.entries.iter().collect();
+        }
+        self.entries
+            .iter()
+            .filter(|e| e.name.to_ascii_lowercase().contains(&needle))
+            .collect()
+    }
 }
 
 pub struct PaneAction {
@@ -87,6 +130,8 @@ pub struct PaneAction {
     pub activated: bool,
     /// Selection or preview toggle changed — app should sync preview.
     pub preview_sync: bool,
+    /// Batch-move selected items to the other pane (full remote paths).
+    pub batch_move: Option<Vec<String>>,
 }
 
 pub fn is_image_filename(name: &str) -> bool {
@@ -109,6 +154,7 @@ pub fn show_pane(ui: &mut egui::Ui, pane: &mut PaneState, allow_dnd: bool) -> Pa
         new_folder: false,
         activated: false,
         preview_sync: false,
+        batch_move: None,
     };
 
     let title = match pane.side {
@@ -222,6 +268,33 @@ pub fn show_pane(ui: &mut egui::Ui, pane: &mut PaneState, allow_dnd: bool) -> Pa
                 if !p.is_empty() {
                     action.go_path = Some(pathutil::normalize(p));
                 }
+            }
+        });
+
+        ui.add_space(4.0);
+
+        // Filter row: substring match against entry names.
+        ui.horizontal(|ui| {
+            ui.label(RichText::new("Filter").size(15.0));
+            let clear_w = if pane.filter.is_empty() { 0.0 } else { 40.0 };
+            let edit_w = (ui.available_width() - clear_w - 8.0).max(48.0);
+            ui.add(
+                egui::TextEdit::singleline(&mut pane.filter)
+                    .desired_width(edit_w)
+                    .desired_rows(1)
+                    .margin(egui::Margin::symmetric(8.0, 6.0))
+                    .hint_text("type to filter…"),
+            );
+            if !pane.filter.is_empty()
+                && ui
+                    .add(
+                        egui::Button::new(RichText::new("✕").size(16.0))
+                            .min_size(Vec2::new(36.0, 32.0)),
+                    )
+                    .on_hover_text("Clear filter")
+                    .clicked()
+            {
+                pane.filter.clear();
             }
         });
 
@@ -341,11 +414,25 @@ fn show_file_list(
             ui.set_min_height(list_h);
             ui.set_min_width(ui.available_width());
 
-            if pane.entries.is_empty() && !pane.loading {
-                ui.weak(RichText::new("(empty)").size(17.0));
+            let filtered = pane.filtered_entries();
+            let total = pane.entries.len();
+            let shown = filtered.len();
+            if !pane.filter.trim().is_empty() {
+                ui.weak(RichText::new(format!("Showing {shown} / {total}")).size(14.0));
+                ui.add_space(2.0);
             }
 
-            for entry in &pane.entries {
+            if total == 0 && !pane.loading {
+                ui.weak(RichText::new("(empty)").size(17.0));
+            } else if shown == 0 && !pane.loading {
+                ui.weak(RichText::new("(no matches)").size(17.0));
+            }
+
+            let ctrl = ui.input(|i| i.modifiers.ctrl || i.modifiers.command);
+
+            // Owned copies so we can mutate selection while iterating.
+            let entries: Vec<RemoteEntry> = filtered.into_iter().cloned().collect();
+            for entry in &entries {
                 let full_path = pathutil::join(&pane.cwd, &entry.name);
                 let label = if entry.is_dir {
                     format!("📁  {}", entry.name)
@@ -355,18 +442,81 @@ fn show_file_list(
                     format!("📄  {}  ({})", entry.name, format_size(entry.size))
                 };
 
-                let selected = pane.selected.as_deref() == Some(entry.name.as_str());
-                // click_and_drag so dnd_set_drag_payload can observe a real drag.
+                let selected = pane.selected.contains(&entry.name);
                 let resp = file_row(ui, &label, selected);
 
                 if resp.clicked() {
-                    pane.selected = Some(entry.name.clone());
+                    if ctrl {
+                        if pane.selected.contains(&entry.name) {
+                            pane.selected.remove(&entry.name);
+                            if pane.focus.as_deref() == Some(entry.name.as_str()) {
+                                pane.focus = pane.selected.iter().next().cloned();
+                            }
+                        } else {
+                            pane.selected.insert(entry.name.clone());
+                            pane.focus = Some(entry.name.clone());
+                        }
+                    } else {
+                        pane.selected.clear();
+                        pane.selected.insert(entry.name.clone());
+                        pane.focus = Some(entry.name.clone());
+                    }
                     action.activated = true;
                     action.preview_sync = true;
                 }
+
+                if resp.secondary_clicked() {
+                    // Right-click: ensure the row is part of the selection.
+                    if !pane.selected.contains(&entry.name) {
+                        if !ctrl {
+                            pane.selected.clear();
+                        }
+                        pane.selected.insert(entry.name.clone());
+                        pane.focus = Some(entry.name.clone());
+                        action.preview_sync = true;
+                    }
+                    action.activated = true;
+                }
+
                 if resp.double_clicked() && entry.is_dir {
                     action.go_path = Some(full_path.clone());
                 }
+
+                // Context menu for batch move.
+                let n_selected = pane.selected.len();
+                let other = match pane.side {
+                    PaneSide::Left => "Right",
+                    PaneSide::Right => "Left",
+                };
+                resp.context_menu(|ui| {
+                    ui.set_min_width(220.0);
+                    if n_selected == 0 {
+                        ui.label(RichText::new("No selection").size(15.0));
+                        return;
+                    }
+                    let label = if n_selected == 1 {
+                        format!("Move to {other} pane")
+                    } else {
+                        format!("Move {n_selected} items to {other} pane")
+                    };
+                    if ui
+                        .add_enabled(
+                            allow_dnd,
+                            egui::Button::new(RichText::new(label).size(16.0)),
+                        )
+                        .on_hover_text("Move selected items into the other pane’s current folder")
+                        .clicked()
+                    {
+                        action.batch_move = Some(pane.selected_paths());
+                        ui.close_menu();
+                    }
+                    ui.separator();
+                    ui.label(
+                        RichText::new("Tip: Ctrl+click to multi-select")
+                            .size(13.0)
+                            .weak(),
+                    );
+                });
 
                 if allow_dnd {
                     let payload = DragPayload {

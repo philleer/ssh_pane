@@ -33,6 +33,18 @@ struct NewFolderPrompt {
     error: Option<String>,
 }
 
+/// Queued multi-item move/copy started from the context menu.
+struct BatchJob {
+    remaining: Vec<String>,
+    dst_dir: String,
+    mode: OpMode,
+    overwrite_all: bool,
+    completed: usize,
+    total: usize,
+    #[allow(dead_code)]
+    src_side: PaneSide,
+}
+
 pub struct App {
     screen: Screen,
     connect: ConnectForm,
@@ -46,6 +58,7 @@ pub struct App {
     busy: bool,
     overwrite: Option<OverwritePrompt>,
     new_folder: Option<NewFolderPrompt>,
+    batch: Option<BatchJob>,
     show_about: bool,
     /// Previous frame maximized flag — used to force a full redraw on toggle.
     was_maximized: bool,
@@ -68,6 +81,7 @@ impl App {
             busy: false,
             overwrite: None,
             new_folder: None,
+            batch: None,
             show_about: false,
             was_maximized: false,
         }
@@ -108,6 +122,8 @@ impl App {
                 self.left = PaneState::new(PaneSide::Left);
                 self.right = PaneState::new(PaneSide::Right);
                 self.new_folder = None;
+                self.batch = None;
+                self.overwrite = None;
             }
             WorkerEvent::Listed {
                 side,
@@ -119,6 +135,7 @@ impl App {
                 pane.error = None;
                 pane.set_path(path);
                 pane.entries = entries;
+                pane.prune_selection();
             }
             WorkerEvent::ListFailed { side, path, error } => {
                 let pane = self.pane_mut(side);
@@ -133,23 +150,53 @@ impl App {
                 mode,
                 existing_path,
             } => {
-                self.busy = false;
-                self.status = format!("Target exists: {existing_path}");
-                self.overwrite = Some(OverwritePrompt {
-                    src,
-                    dst_dir,
-                    mode,
-                    existing_path,
-                });
+                if self.batch.as_ref().is_some_and(|b| b.overwrite_all) {
+                    self.busy = true;
+                    self.status = format!(
+                        "Batch {}/{}: overwrite {}",
+                        self.batch.as_ref().map(|b| b.completed + 1).unwrap_or(1),
+                        self.batch.as_ref().map(|b| b.total).unwrap_or(1),
+                        existing_path
+                    );
+                    self.worker.send(WorkerRequest::Transfer {
+                        src,
+                        dst_dir,
+                        mode,
+                        overwrite: true,
+                    });
+                } else {
+                    self.busy = false;
+                    self.status = format!("Target exists: {existing_path}");
+                    self.overwrite = Some(OverwritePrompt {
+                        src,
+                        dst_dir,
+                        mode,
+                        existing_path,
+                    });
+                }
             }
             WorkerEvent::TransferOk { src, dst_dir, mode } => {
-                self.busy = false;
-                self.status = format!("{} ok: {} → {}", mode.label(), src, dst_dir);
-                self.request_list(PaneSide::Left, self.left.cwd.clone());
-                self.request_list(PaneSide::Right, self.right.cwd.clone());
+                if let Some(batch) = self.batch.as_mut() {
+                    batch.completed += 1;
+                }
+                if self.advance_batch() {
+                    // Next item already queued.
+                } else {
+                    self.busy = false;
+                    let done = self
+                        .batch
+                        .as_ref()
+                        .map(|b| format!("Batch done: {}/{} {}", b.completed, b.total, mode.label()))
+                        .unwrap_or_else(|| format!("{} ok: {} → {}", mode.label(), src, dst_dir));
+                    self.batch = None;
+                    self.status = done;
+                    self.request_list(PaneSide::Left, self.left.cwd.clone());
+                    self.request_list(PaneSide::Right, self.right.cwd.clone());
+                }
             }
             WorkerEvent::TransferFailed { error } => {
                 self.busy = false;
+                self.batch = None;
                 self.status = format!("Transfer failed: {error}");
             }
             WorkerEvent::MkdirOk { side, path } => {
@@ -209,7 +256,7 @@ impl App {
             let pane = self.pane_mut(side);
             (
                 pane.preview_enabled,
-                pane.selected.clone(),
+                pane.focus.clone(),
                 pane.cwd.clone(),
                 pane.entries.clone(),
                 pane.preview_path.clone(),
@@ -279,26 +326,101 @@ impl App {
     }
 
     fn start_transfer(&mut self, src_side: PaneSide, src_path: String) {
-        if self.busy {
+        if self.busy || self.batch.is_some() {
             return;
         }
         let dst_dir = match src_side {
             PaneSide::Left => self.right.cwd.clone(),
             PaneSide::Right => self.left.cwd.clone(),
         };
-        if ops::is_same_directory_transfer(&src_path, &dst_dir) {
+        self.begin_transfer(src_path, dst_dir, self.mode, false);
+    }
+
+    fn start_batch_move(&mut self, src_side: PaneSide, paths: Vec<String>) {
+        if self.busy || self.batch.is_some() || paths.is_empty() {
+            return;
+        }
+        let dst_dir = match src_side {
+            PaneSide::Left => self.right.cwd.clone(),
+            PaneSide::Right => self.left.cwd.clone(),
+        };
+        let mut paths: Vec<String> = paths
+            .into_iter()
+            .filter(|p| !ops::is_same_directory_transfer(p, &dst_dir))
+            .collect();
+        if paths.is_empty() {
             self.status = ops::OpsError::SameDirectory.to_string();
             warn!("{}", self.status);
             return;
         }
+        let total = paths.len();
+        let first = paths.remove(0);
+        info!("batch move start side={src_side:?} total={total} → {dst_dir}");
+        self.batch = Some(BatchJob {
+            remaining: paths,
+            dst_dir: dst_dir.clone(),
+            mode: OpMode::Move,
+            overwrite_all: false,
+            completed: 0,
+            total,
+            src_side,
+        });
+        self.pane_mut(src_side).clear_selection();
+        self.begin_transfer(first, dst_dir, OpMode::Move, false);
+    }
+
+    /// Returns true if another item was queued.
+    fn advance_batch(&mut self) -> bool {
+        let Some(batch) = self.batch.as_mut() else {
+            return false;
+        };
+        if batch.remaining.is_empty() {
+            return false;
+        }
+        let next = batch.remaining.remove(0);
+        let dst_dir = batch.dst_dir.clone();
+        let mode = batch.mode;
+        let overwrite = batch.overwrite_all;
+        let idx = batch.completed + 1;
+        let total = batch.total;
+        self.status = format!("Batch {idx}/{total}: {} {next} → {dst_dir}", mode.label());
         self.busy = true;
-        self.status = format!("{} {} → {}", self.mode.label(), src_path, dst_dir);
+        self.worker.send(WorkerRequest::CheckExists {
+            src: next,
+            dst_dir,
+            mode,
+            overwrite,
+        });
+        true
+    }
+
+    fn begin_transfer(&mut self, src_path: String, dst_dir: String, mode: OpMode, overwrite: bool) {
+        if ops::is_same_directory_transfer(&src_path, &dst_dir) {
+            self.status = ops::OpsError::SameDirectory.to_string();
+            warn!("{}", self.status);
+            if self.batch.is_some() && !self.advance_batch() {
+                self.batch = None;
+                self.busy = false;
+            }
+            return;
+        }
+        self.busy = true;
+        if let Some(batch) = &self.batch {
+            self.status = format!(
+                "Batch {}/{}: {} {src_path} → {dst_dir}",
+                batch.completed + 1,
+                batch.total,
+                mode.label()
+            );
+        } else {
+            self.status = format!("{} {src_path} → {dst_dir}", mode.label());
+        }
         info!("start transfer: {}", self.status);
         self.worker.send(WorkerRequest::CheckExists {
             src: src_path,
             dst_dir,
-            mode: self.mode,
-            overwrite: false,
+            mode,
+            overwrite,
         });
     }
 
@@ -344,7 +466,10 @@ impl App {
             return;
         };
         let existing = prompt.existing_path.clone();
+        let in_batch = self.batch.is_some();
         let mut overwrite = false;
+        let mut overwrite_all = false;
+        let mut skip = false;
         let mut cancel = false;
 
         egui::Window::new("Overwrite?")
@@ -352,12 +477,15 @@ impl App {
             .resizable(false)
             .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
             .show(ctx, |ui| {
-                ui.set_min_width(360.0);
-                ui.label(RichText::new(format!(
-                    "Target already exists:\n{existing}\n\nOverwrite?"
-                )).size(18.0));
+                ui.set_min_width(420.0);
+                ui.label(
+                    RichText::new(format!(
+                        "Target already exists:\n{existing}\n\nOverwrite?"
+                    ))
+                    .size(18.0),
+                );
                 ui.add_space(12.0);
-                ui.horizontal(|ui| {
+                ui.horizontal_wrapped(|ui| {
                     if ui
                         .add(
                             egui::Button::new(RichText::new("Overwrite").size(18.0))
@@ -366,6 +494,26 @@ impl App {
                         .clicked()
                     {
                         overwrite = true;
+                    }
+                    if in_batch {
+                        if ui
+                            .add(
+                                egui::Button::new(RichText::new("Overwrite All").size(18.0))
+                                    .min_size(egui::vec2(140.0, 38.0)),
+                            )
+                            .clicked()
+                        {
+                            overwrite_all = true;
+                        }
+                        if ui
+                            .add(
+                                egui::Button::new(RichText::new("Skip").size(18.0))
+                                    .min_size(egui::vec2(90.0, 38.0)),
+                            )
+                            .clicked()
+                        {
+                            skip = true;
+                        }
                     }
                     if ui
                         .add(
@@ -379,7 +527,12 @@ impl App {
                 });
             });
 
-        if overwrite {
+        if overwrite || overwrite_all {
+            if overwrite_all {
+                if let Some(batch) = self.batch.as_mut() {
+                    batch.overwrite_all = true;
+                }
+            }
             if let Some(p) = self.overwrite.take() {
                 self.busy = true;
                 self.worker.send(WorkerRequest::Transfer {
@@ -389,8 +542,27 @@ impl App {
                     overwrite: true,
                 });
             }
+        } else if skip {
+            self.overwrite = None;
+            if let Some(batch) = self.batch.as_mut() {
+                batch.completed += 1;
+            }
+            if !self.advance_batch() {
+                self.busy = false;
+                let done = self
+                    .batch
+                    .as_ref()
+                    .map(|b| format!("Batch done: {}/{} (skipped some)", b.completed, b.total))
+                    .unwrap_or_else(|| "Skipped".into());
+                self.batch = None;
+                self.status = done;
+                self.request_list(PaneSide::Left, self.left.cwd.clone());
+                self.request_list(PaneSide::Right, self.right.cwd.clone());
+            }
         } else if cancel {
             self.overwrite = None;
+            self.batch = None;
+            self.busy = false;
             self.status = "Cancelled".into();
         }
     }
@@ -726,6 +898,9 @@ impl eframe::App for App {
                                             payload.remote_path,
                                         );
                                     }
+                                    if let Some(paths) = action.batch_move {
+                                        self.start_batch_move(PaneSide::Left, paths);
+                                    }
                                 },
                             );
 
@@ -769,6 +944,9 @@ impl eframe::App for App {
                                             payload.side,
                                             payload.remote_path,
                                         );
+                                    }
+                                    if let Some(paths) = action.batch_move {
+                                        self.start_batch_move(PaneSide::Right, paths);
                                     }
                                 },
                             );

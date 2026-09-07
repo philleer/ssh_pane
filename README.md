@@ -10,6 +10,8 @@ Drag items between panes to run remote `cp` or `mv` on the same host (no local f
 - **CP / MV** mode toggle (highlighted toolbar buttons)
 - Split left/right panes, each with its own remote path
 - Drag from one pane to the other to copy or move on the server
+- **Ctrl+click** multi-select; right-click → **Move N items to other pane**
+- Per-pane **Filter** box (case-insensitive name substring)
 - Per-pane **Preview ON/OFF** toggle for remote image preview (png/jpg/gif/webp/bmp)
 - Create new folders (pane **+ Folder** or File menu)
 - Overwrite confirmation when the destination name already exists
