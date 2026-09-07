@@ -180,7 +180,7 @@ impl App {
                     batch.completed += 1;
                 }
                 if self.advance_batch() {
-                    // Next item already queued.
+                    // Next item already queued — defer list refresh until batch ends.
                 } else {
                     self.busy = false;
                     let done = self
@@ -190,8 +190,7 @@ impl App {
                         .unwrap_or_else(|| format!("{} ok: {} → {}", mode.label(), src, dst_dir));
                     self.batch = None;
                     self.status = done;
-                    self.request_list(PaneSide::Left, self.left.cwd.clone());
-                    self.request_list(PaneSide::Right, self.right.cwd.clone());
+                    self.refresh_after_transfer(&src, &dst_dir, mode);
                 }
             }
             WorkerEvent::TransferFailed { error } => {
@@ -323,6 +322,37 @@ impl App {
         pane.error = None;
         pane.path_edit = path.clone();
         self.worker.send(WorkerRequest::ListDir { side, path });
+    }
+
+    /// Refresh only panes that show the destination (and source parent for Move).
+    /// Avoids the old “always readdir both panes” cost that kept the spinner up.
+    fn refresh_after_transfer(&mut self, src: &str, dst_dir: &str, mode: OpMode) {
+        let src_parent = if src.is_empty() {
+            String::new()
+        } else {
+            ssh_split_pane::pathutil::parent(src)
+        };
+        let dst_n = ssh_split_pane::pathutil::normalize(dst_dir);
+        let src_n = if src_parent.is_empty() {
+            String::new()
+        } else {
+            ssh_split_pane::pathutil::normalize(&src_parent)
+        };
+
+        let left_cwd = ssh_split_pane::pathutil::normalize(&self.left.cwd);
+        let right_cwd = ssh_split_pane::pathutil::normalize(&self.right.cwd);
+
+        let need = |cwd: &str| -> bool {
+            cwd == dst_n
+                || (mode == OpMode::Move && !src_n.is_empty() && cwd == src_n)
+        };
+
+        if need(&left_cwd) {
+            self.request_list(PaneSide::Left, self.left.cwd.clone());
+        }
+        if need(&right_cwd) {
+            self.request_list(PaneSide::Right, self.right.cwd.clone());
+        }
     }
 
     fn start_transfer(&mut self, src_side: PaneSide, src_path: String) {
@@ -554,10 +584,18 @@ impl App {
                     .as_ref()
                     .map(|b| format!("Batch done: {}/{} (skipped some)", b.completed, b.total))
                     .unwrap_or_else(|| "Skipped".into());
+                let mode = self.batch.as_ref().map(|b| b.mode).unwrap_or(OpMode::Move);
+                let dst = self
+                    .batch
+                    .as_ref()
+                    .map(|b| b.dst_dir.clone())
+                    .unwrap_or_default();
                 self.batch = None;
                 self.status = done;
-                self.request_list(PaneSide::Left, self.left.cwd.clone());
-                self.request_list(PaneSide::Right, self.right.cwd.clone());
+                if !dst.is_empty() {
+                    // Best-effort refresh of destination panes after skip-finish.
+                    self.refresh_after_transfer("", &dst, mode);
+                }
             }
         } else if cancel {
             self.overwrite = None;

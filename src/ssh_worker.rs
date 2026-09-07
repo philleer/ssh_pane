@@ -9,7 +9,7 @@ use std::thread;
 use std::time::Duration;
 
 use log::{debug, error, info, warn};
-use ssh2::Session;
+use ssh2::{RenameFlags, Session, Sftp};
 
 use crate::ops;
 use crate::pathutil::shell_quote;
@@ -195,6 +195,8 @@ impl WorkerHandle {
 
 struct SessionState {
     session: Session,
+    /// Kept open for the whole connection — opening SFTP per op is a major RTT cost.
+    sftp: Sftp,
 }
 
 fn worker_loop(req_rx: Receiver<WorkerRequest>, ev_tx: Sender<WorkerEvent>) {
@@ -242,7 +244,7 @@ fn worker_loop(req_rx: Receiver<WorkerRequest>, ev_tx: Sender<WorkerEvent>) {
                     continue;
                 };
                 debug!("list_dir side={side:?} path={path}");
-                match list_dir(&s.session, &path) {
+                match list_dir(&s.sftp, &path) {
                     Ok(entries) => {
                         debug!("listed {} entries in {path}", entries.len());
                         let _ = ev_tx.send(WorkerEvent::Listed {
@@ -274,7 +276,7 @@ fn worker_loop(req_rx: Receiver<WorkerRequest>, ev_tx: Sender<WorkerEvent>) {
                     continue;
                 };
                 let dest = ops::destination_path(&src, &dst_dir);
-                match path_exists(&s.session, &dest) {
+                match path_exists(&s.sftp, &s.session, &dest) {
                     Ok(true) if !overwrite => {
                         info!("target exists, asking overwrite confirm: {dest}");
                         let _ = ev_tx.send(WorkerEvent::NeedsOverwriteConfirm {
@@ -291,7 +293,9 @@ fn worker_loop(req_rx: Receiver<WorkerRequest>, ev_tx: Sender<WorkerEvent>) {
                             src,
                             dst_dir
                         )));
-                        match transfer(&s.session, &src, &dst_dir, mode, true) {
+                        // Pass the real overwrite flag — previously always `true`, which
+                        // forced an extra remote `rm -rf` before every cp/mv.
+                        match transfer(s, &src, &dst_dir, mode, overwrite) {
                             Ok(()) => {
                                 info!("{} ok: {src} → {dst_dir}", mode.label());
                                 let _ = ev_tx.send(WorkerEvent::TransferOk {
@@ -330,7 +334,7 @@ fn worker_loop(req_rx: Receiver<WorkerRequest>, ev_tx: Sender<WorkerEvent>) {
                     src,
                     dst_dir
                 )));
-                match transfer(&s.session, &src, &dst_dir, mode, overwrite) {
+                match transfer(s, &src, &dst_dir, mode, overwrite) {
                     Ok(()) => {
                         info!("{} ok: {src} → {dst_dir}", mode.label());
                         let _ = ev_tx.send(WorkerEvent::TransferOk {
@@ -355,7 +359,7 @@ fn worker_loop(req_rx: Receiver<WorkerRequest>, ev_tx: Sender<WorkerEvent>) {
                 match ops::plan_mkdir(&parent, &name) {
                     Ok((path, _)) => {
                         let _ = ev_tx.send(WorkerEvent::Busy(format!("mkdir {path}")));
-                        match mkdir(&s.session, &path) {
+                        match mkdir_sftp(&s.sftp, &path) {
                             Ok(()) => {
                                 info!("mkdir ok: {path}");
                                 let _ = ev_tx.send(WorkerEvent::MkdirOk { side, path });
@@ -387,7 +391,7 @@ fn worker_loop(req_rx: Receiver<WorkerRequest>, ev_tx: Sender<WorkerEvent>) {
                     continue;
                 };
                 debug!("read_file side={side:?} path={path} max_bytes={max_bytes}");
-                match read_file(&s.session, &path, max_bytes) {
+                match read_file(&s.sftp, &path, max_bytes) {
                     Ok(bytes) => {
                         debug!("read_file ok path={path} len={}", bytes.len());
                         let _ = ev_tx.send(WorkerEvent::FileReadOk {
@@ -447,12 +451,12 @@ fn connect(params: &ConnectParams) -> Result<(SessionState, String), String> {
         return Err("Authentication failed".into());
     }
 
-    let home = resolve_home(&session)?;
-    Ok((SessionState { session }, home))
+    let sftp = session.sftp().map_err(|e| format!("SFTP open: {e}"))?;
+    let home = resolve_home(&session, &sftp)?;
+    Ok((SessionState { session, sftp }, home))
 }
 
-fn resolve_home(session: &Session) -> Result<String, String> {
-    let sftp = session.sftp().map_err(|e| format!("SFTP open: {e}"))?;
+fn resolve_home(session: &Session, sftp: &Sftp) -> Result<String, String> {
     match sftp.realpath(std::path::Path::new(".")) {
         Ok(p) => Ok(p.to_string_lossy().replace('\\', "/")),
         Err(_) => {
@@ -466,8 +470,7 @@ fn resolve_home(session: &Session) -> Result<String, String> {
     }
 }
 
-fn read_file(session: &Session, path: &str, max_bytes: u64) -> Result<Vec<u8>, String> {
-    let sftp = session.sftp().map_err(|e| format!("SFTP open: {e}"))?;
+fn read_file(sftp: &Sftp, path: &str, max_bytes: u64) -> Result<Vec<u8>, String> {
     let mut remote = sftp
         .open(std::path::Path::new(path))
         .map_err(|e| format!("open {path}: {e}"))?;
@@ -485,8 +488,7 @@ fn read_file(session: &Session, path: &str, max_bytes: u64) -> Result<Vec<u8>, S
     Ok(buf)
 }
 
-fn list_dir(session: &Session, path: &str) -> Result<Vec<RemoteEntry>, String> {
-    let sftp = session.sftp().map_err(|e| format!("SFTP open: {e}"))?;
+fn list_dir(sftp: &Sftp, path: &str) -> Result<Vec<RemoteEntry>, String> {
     let entries = sftp
         .readdir(std::path::Path::new(path))
         .map_err(|e| format!("readdir {path}: {e}"))?;
@@ -516,8 +518,7 @@ fn list_dir(session: &Session, path: &str) -> Result<Vec<RemoteEntry>, String> {
     Ok(out)
 }
 
-fn path_exists(session: &Session, path: &str) -> Result<bool, String> {
-    let sftp = session.sftp().map_err(|e| format!("SFTP open: {e}"))?;
+fn path_exists(sftp: &Sftp, session: &Session, path: &str) -> Result<bool, String> {
     match sftp.stat(std::path::Path::new(path)) {
         Ok(_) => Ok(true),
         Err(e) => {
@@ -525,9 +526,11 @@ fn path_exists(session: &Session, path: &str) -> Result<bool, String> {
             if msg.contains("NO_SUCH_FILE")
                 || msg.contains("no such file")
                 || msg.contains("No such file")
+                || msg.contains("not found")
             {
                 Ok(false)
             } else {
+                // Rare fallback — avoid unless SFTP error is ambiguous.
                 let cmd = format!("test -e {} && echo yes || echo no", shell_quote(path));
                 let (code, out, err) = exec(session, &cmd)?;
                 if code != 0 && !out.contains("no") {
@@ -539,31 +542,45 @@ fn path_exists(session: &Session, path: &str) -> Result<bool, String> {
     }
 }
 
-fn mkdir(session: &Session, path: &str) -> Result<(), String> {
-    let cmd = ops::mkdir_command(path);
-    debug!("exec: {cmd}");
-    let (code, _, err) = exec(session, &cmd)?;
-    if code != 0 {
-        return Err(if err.trim().is_empty() {
-            format!("mkdir failed with exit code {code}")
-        } else {
-            err.trim().to_string()
-        });
-    }
-    Ok(())
+fn mkdir_sftp(sftp: &Sftp, path: &str) -> Result<(), String> {
+    sftp.mkdir(std::path::Path::new(path), 0o755)
+        .map_err(|e| format!("mkdir {path}: {e}"))
 }
 
 fn transfer(
-    session: &Session,
+    state: &SessionState,
     src: &str,
     dst_dir: &str,
     mode: OpMode,
     overwrite: bool,
 ) -> Result<(), String> {
+    let dest = ops::destination_path(src, dst_dir);
+
+    // Fast path: same-filesystem move via SFTP rename (one RTT, no shell).
+    if mode == OpMode::Move {
+        let flags = if overwrite {
+            Some(RenameFlags::OVERWRITE | RenameFlags::ATOMIC)
+        } else {
+            Some(RenameFlags::ATOMIC)
+        };
+        match state
+            .sftp
+            .rename(std::path::Path::new(src), std::path::Path::new(&dest), flags)
+        {
+            Ok(()) => {
+                debug!("sftp rename ok: {src} → {dest}");
+                return Ok(());
+            }
+            Err(e) => {
+                debug!("sftp rename failed ({e}), falling back to shell mv");
+            }
+        }
+    }
+
     let plan = ops::plan_transfer(src, dst_dir, mode, overwrite).map_err(|e| e.to_string())?;
     for cmd in &plan.commands {
         debug!("exec: {cmd}");
-        let (code, _, err) = exec(session, cmd)?;
+        let (code, _, err) = exec(&state.session, cmd)?;
         if code != 0 {
             if cmd.starts_with("rm ") && err.to_lowercase().contains("no such file") {
                 continue;
@@ -590,22 +607,33 @@ fn exec(session: &Session, command: &str) -> Result<(i32, String, String), Strin
         .exec(command)
         .map_err(|e| format!("exec: {e}"))?;
 
-    let mut stdout = String::new();
-    channel
-        .read_to_string(&mut stdout)
-        .map_err(|e| format!("read stdout: {e}"))?;
-
-    let mut stderr = String::new();
-    channel
-        .stderr()
-        .read_to_string(&mut stderr)
-        .map_err(|e| format!("read stderr: {e}"))?;
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    // Interleave reads so a full stderr pipe cannot stall stdout EOF.
+    loop {
+        let mut buf = [0u8; 8192];
+        let n_out = channel.read(&mut buf).unwrap_or(0);
+        if n_out > 0 {
+            stdout.extend_from_slice(&buf[..n_out]);
+        }
+        let n_err = channel.stderr().read(&mut buf).unwrap_or(0);
+        if n_err > 0 {
+            stderr.extend_from_slice(&buf[..n_err]);
+        }
+        if n_out == 0 && n_err == 0 {
+            break;
+        }
+    }
 
     channel
         .wait_close()
         .map_err(|e| format!("wait_close: {e}"))?;
     let code = channel.exit_status().map_err(|e| format!("exit_status: {e}"))?;
-    Ok((code, stdout, stderr))
+    Ok((
+        code,
+        String::from_utf8_lossy(&stdout).into_owned(),
+        String::from_utf8_lossy(&stderr).into_owned(),
+    ))
 }
 
 #[cfg(test)]

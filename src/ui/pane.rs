@@ -240,6 +240,27 @@ pub fn show_pane(ui: &mut egui::Ui, pane: &mut PaneState, allow_dnd: bool) -> Pa
                 pane.set_preview_enabled(!pane.preview_enabled);
                 action.preview_sync = true;
             }
+
+            ui.add_space(6.0);
+            ui.label(RichText::new("Filter").size(14.0));
+            ui.add(
+                egui::TextEdit::singleline(&mut pane.filter)
+                    .desired_width(120.0)
+                    .desired_rows(1)
+                    .margin(egui::Margin::symmetric(6.0, 6.0))
+                    .hint_text("filter…"),
+            );
+            if !pane.filter.is_empty()
+                && ui
+                    .add(
+                        egui::Button::new(RichText::new("✕").size(15.0))
+                            .min_size(Vec2::new(28.0, 28.0)),
+                    )
+                    .on_hover_text("Clear filter")
+                    .clicked()
+            {
+                pane.filter.clear();
+            }
         });
 
         ui.add_space(4.0);
@@ -271,33 +292,6 @@ pub fn show_pane(ui: &mut egui::Ui, pane: &mut PaneState, allow_dnd: bool) -> Pa
             }
         });
 
-        ui.add_space(4.0);
-
-        // Filter row: substring match against entry names.
-        ui.horizontal(|ui| {
-            ui.label(RichText::new("Filter").size(15.0));
-            let clear_w = if pane.filter.is_empty() { 0.0 } else { 40.0 };
-            let edit_w = (ui.available_width() - clear_w - 8.0).max(48.0);
-            ui.add(
-                egui::TextEdit::singleline(&mut pane.filter)
-                    .desired_width(edit_w)
-                    .desired_rows(1)
-                    .margin(egui::Margin::symmetric(8.0, 6.0))
-                    .hint_text("type to filter…"),
-            );
-            if !pane.filter.is_empty()
-                && ui
-                    .add(
-                        egui::Button::new(RichText::new("✕").size(16.0))
-                            .min_size(Vec2::new(36.0, 32.0)),
-                    )
-                    .on_hover_text("Clear filter")
-                    .clicked()
-            {
-                pane.filter.clear();
-            }
-        });
-
         if pane.loading {
             ui.horizontal(|ui| {
                 ui.spinner();
@@ -307,6 +301,23 @@ pub fn show_pane(ui: &mut egui::Ui, pane: &mut PaneState, allow_dnd: bool) -> Pa
         if let Some(err) = &pane.error {
             ui.colored_label(egui::Color32::from_rgb(220, 80, 80), err);
         }
+
+        let total = pane.entries.len();
+        let shown = if pane.filter.trim().is_empty() {
+            total
+        } else {
+            pane.filtered_entries().len()
+        };
+        let count_text = if pane.filter.trim().is_empty() {
+            if total == 1 {
+                "1 item".to_string()
+            } else {
+                format!("{total} items")
+            }
+        } else {
+            format!("{shown} / {total}")
+        };
+        ui.label(RichText::new(count_text).size(12.0).weak());
 
         ui.add_space(2.0);
         ui.separator();
@@ -417,10 +428,6 @@ fn show_file_list(
             let filtered = pane.filtered_entries();
             let total = pane.entries.len();
             let shown = filtered.len();
-            if !pane.filter.trim().is_empty() {
-                ui.weak(RichText::new(format!("Showing {shown} / {total}")).size(14.0));
-                ui.add_space(2.0);
-            }
 
             if total == 0 && !pane.loading {
                 ui.weak(RichText::new("(empty)").size(17.0));
