@@ -1,0 +1,14 @@
+# Local build accelerators.
+#
+# Linker/sccache are applied by ./scripts/cargo.sh (optional tools).
+# Do not set CARGO_TARGET_DIR here — Cursor sandboxes may override it;
+# use ./scripts/cargo.sh so artifacts stay in ./target.
+
+[build]
+incremental = true
+
+[alias]
+# Thin-LTO release (default [profile.release])
+br = "build --release"
+# Fat-LTO shipping build
+dist = "build --profile dist"

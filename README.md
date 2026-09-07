@@ -10,6 +10,7 @@ Drag items between panes to run remote `cp` or `mv` on the same host (no local f
 - **CP / MV** mode toggle (highlighted toolbar buttons)
 - Split left/right panes, each with its own remote path
 - Drag from one pane to the other to copy or move on the server
+- Per-pane **Preview ON/OFF** toggle for remote image preview (png/jpg/gif/webp/bmp)
 - Create new folders (pane **+ Folder** or File menu)
 - Overwrite confirmation when the destination name already exists
 - Structured logging via `log` / `env_logger`
@@ -35,10 +36,24 @@ Binary: `target\release\ssh_split_pane.exe`
 
 ```bash
 sudo apt install build-essential pkg-config libssl-dev
+# Optional: faster link/cache (or use the prebuilt mold/sccache in ~/.local/bin)
+#   sudo apt install mold clang sccache
 # For GUI under WSL2, enable WSLg or use a Windows-built exe
-cargo build --release
+
+# Prefer the project wrapper (pins ./target, enables mold/sccache if present)
+./scripts/cargo.sh build          # debug, deps at opt-level 2
+./scripts/cargo.sh build --release  # thin LTO (faster than fat LTO)
+./scripts/cargo.sh build --profile dist  # fat LTO for shipping
+
 ./target/release/ssh_split_pane
 ```
+
+**Build speed notes**
+
+- Use `./scripts/cargo.sh …` so `CARGO_TARGET_DIR` stays at `./target` (avoids sandbox/cache redirects writing elsewhere).
+- Dev profile optimizes dependencies (`opt-level = 2`) for snappier egui while your crates stay quick to recompile.
+- Default `--release` uses **thin LTO**; use `--profile dist` when you want maximum size/speed optimization.
+- With `mold` and `sccache` on `PATH`, the wrapper turns them on automatically (helps a lot with vendored OpenSSL).
 
 Cross-compile for Windows from Linux (optional):
 

@@ -10,7 +10,7 @@ use ssh_split_pane::ssh_worker::{
 
 use crate::ui::connect::ConnectForm;
 use crate::ui::menu;
-use crate::ui::pane::{self, PaneState};
+use crate::ui::pane::{self, is_image_filename, PaneState};
 use crate::ui::toolbar;
 
 #[derive(PartialEq, Eq)]
@@ -73,13 +73,13 @@ impl App {
         }
     }
 
-    fn poll_worker(&mut self) {
+    fn poll_worker(&mut self, ctx: &egui::Context) {
         while let Some(ev) = self.worker.try_recv() {
-            self.handle_event(ev);
+            self.handle_event(ctx, ev);
         }
     }
 
-    fn handle_event(&mut self, ev: WorkerEvent) {
+    fn handle_event(&mut self, ctx: &egui::Context, ev: WorkerEvent) {
         match ev {
             WorkerEvent::Connected { home } => {
                 self.connect.on_connected();
@@ -166,11 +166,101 @@ impl App {
                 }
                 self.status = format!("mkdir failed: {error}");
             }
+            WorkerEvent::FileReadOk { side, path, bytes } => {
+                let pane = self.pane_mut(side);
+                if !pane.preview_enabled || pane.preview_path.as_deref() != Some(path.as_str()) {
+                    return;
+                }
+                match decode_preview_texture(ctx, &path, &bytes.0) {
+                    Ok(tex) => {
+                        pane.preview_loading = false;
+                        pane.preview_error = None;
+                        pane.preview_texture = Some(tex);
+                        self.status = format!("Preview: {path}");
+                    }
+                    Err(e) => {
+                        pane.preview_loading = false;
+                        pane.preview_texture = None;
+                        pane.preview_error = Some(e.clone());
+                        self.status = format!("Preview failed: {e}");
+                    }
+                }
+            }
+            WorkerEvent::FileReadFailed { side, path, error } => {
+                let pane = self.pane_mut(side);
+                if pane.preview_path.as_deref() == Some(path.as_str()) {
+                    pane.preview_loading = false;
+                    pane.preview_texture = None;
+                    pane.preview_error = Some(error.clone());
+                }
+                self.status = format!("Preview failed: {error}");
+            }
             WorkerEvent::Busy(msg) => {
                 self.busy = true;
                 self.status = msg;
             }
         }
+    }
+
+    fn sync_preview(&mut self, side: PaneSide) {
+        const MAX_PREVIEW_BYTES: u64 = 12 * 1024 * 1024;
+
+        let (enabled, selected, cwd, entries, current_path, loading, has_tex) = {
+            let pane = self.pane_mut(side);
+            (
+                pane.preview_enabled,
+                pane.selected.clone(),
+                pane.cwd.clone(),
+                pane.entries.clone(),
+                pane.preview_path.clone(),
+                pane.preview_loading,
+                pane.preview_texture.is_some(),
+            )
+        };
+
+        if !enabled {
+            self.pane_mut(side).clear_preview_content();
+            return;
+        }
+
+        let Some(name) = selected else {
+            let pane = self.pane_mut(side);
+            pane.preview_loading = false;
+            pane.preview_error = None;
+            pane.preview_path = None;
+            pane.preview_texture = None;
+            return;
+        };
+
+        let Some(entry) = entries.iter().find(|e| e.name == name) else {
+            return;
+        };
+
+        if entry.is_dir || !is_image_filename(&name) {
+            let pane = self.pane_mut(side);
+            pane.preview_loading = false;
+            pane.preview_path = None;
+            pane.preview_texture = None;
+            pane.preview_error = Some("Select an image file to preview".into());
+            return;
+        }
+
+        let path = ssh_split_pane::pathutil::join(&cwd, &name);
+        if current_path.as_deref() == Some(path.as_str()) && (loading || has_tex) {
+            return;
+        }
+
+        let pane = self.pane_mut(side);
+        pane.preview_loading = true;
+        pane.preview_error = None;
+        pane.preview_texture = None;
+        pane.preview_path = Some(path.clone());
+        info!("preview request side={side:?} path={path}");
+        self.worker.send(WorkerRequest::ReadFile {
+            side,
+            path,
+            max_bytes: MAX_PREVIEW_BYTES,
+        });
     }
 
     fn pane_mut(&mut self, side: PaneSide) -> &mut PaneState {
@@ -432,6 +522,25 @@ impl App {
     }
 }
 
+fn decode_preview_texture(
+    ctx: &egui::Context,
+    path: &str,
+    bytes: &[u8],
+) -> Result<egui::TextureHandle, String> {
+    let img = image::load_from_memory(bytes).map_err(|e| format!("decode image: {e}"))?;
+    let rgba = img.to_rgba8();
+    let size = [rgba.width() as usize, rgba.height() as usize];
+    if size[0] == 0 || size[1] == 0 {
+        return Err("empty image".into());
+    }
+    let color = egui::ColorImage::from_rgba_unmultiplied(size, rgba.as_raw());
+    Ok(ctx.load_texture(
+        format!("preview:{path}"),
+        color,
+        egui::TextureOptions::LINEAR,
+    ))
+}
+
 fn apply_large_style(ctx: &egui::Context) {
     let mut style = (*ctx.style()).clone();
     style.text_styles = [
@@ -474,7 +583,7 @@ impl eframe::App for App {
             ctx.request_repaint_after(std::time::Duration::from_millis(50));
         }
 
-        self.poll_worker();
+        self.poll_worker(ctx);
         self.show_overwrite_modal(ctx);
         self.show_new_folder_modal(ctx);
         self.show_about_modal(ctx);
@@ -584,7 +693,9 @@ impl eframe::App for App {
                         let full = ui.available_size();
                         ui.set_min_size(full);
                         let avail = ui.available_width();
-                        let half = ((avail - 12.0) / 2.0).max(120.0);
+                        let sep = 8.0;
+                        // Two panes + separator must fit exactly; previous half*2 ignored sep → overflow.
+                        let half = ((avail - sep) * 0.5).max(120.0);
                         let height = ui.available_height();
 
                         ui.horizontal(|ui| {
@@ -593,10 +704,14 @@ impl eframe::App for App {
                                 egui::Layout::top_down(egui::Align::Min),
                                 |ui| {
                                     ui.set_min_size(ui.available_size());
+                                    ui.set_max_size(ui.available_size());
                                     let action =
                                         pane::show_pane(ui, &mut self.left, !self.busy);
                                     if action.activated {
                                         self.active_pane = PaneSide::Left;
+                                    }
+                                    if action.preview_sync {
+                                        self.sync_preview(PaneSide::Left);
                                     }
                                     if let Some(path) = action.go_path {
                                         self.active_pane = PaneSide::Left;
@@ -614,17 +729,33 @@ impl eframe::App for App {
                                 },
                             );
 
-                            ui.separator();
+                            let (sep_rect, _) = ui.allocate_exact_size(
+                                egui::vec2(sep, height),
+                                egui::Sense::hover(),
+                            );
+                            ui.painter().vline(
+                                sep_rect.center().x,
+                                sep_rect.y_range(),
+                                egui::Stroke::new(
+                                    1.0_f32,
+                                    ui.visuals().widgets.noninteractive.bg_stroke.color,
+                                ),
+                            );
 
+                            let right_w = ui.available_width().max(120.0);
                             ui.allocate_ui_with_layout(
-                                egui::vec2(half, height),
+                                egui::vec2(right_w, height),
                                 egui::Layout::top_down(egui::Align::Min),
                                 |ui| {
                                     ui.set_min_size(ui.available_size());
+                                    ui.set_max_size(ui.available_size());
                                     let action =
                                         pane::show_pane(ui, &mut self.right, !self.busy);
                                     if action.activated {
                                         self.active_pane = PaneSide::Right;
+                                    }
+                                    if action.preview_sync {
+                                        self.sync_preview(PaneSide::Right);
                                     }
                                     if let Some(path) = action.go_path {
                                         self.active_pane = PaneSide::Right;
@@ -646,7 +777,14 @@ impl eframe::App for App {
             }
         }
 
-        if self.busy || self.connect.connecting || self.left.loading || self.right.loading {
+        if self.busy
+            || self.connect.connecting
+            || self.left.loading
+            || self.right.loading
+            || self.left.preview_loading
+            || self.right.preview_loading
+            || egui::DragAndDrop::has_payload_of_type::<pane::DragPayload>(ctx)
+        {
             ctx.request_repaint_after(std::time::Duration::from_millis(50));
         }
     }

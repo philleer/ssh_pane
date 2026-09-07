@@ -1,6 +1,8 @@
-//! Single pane: path bar + file list + drag/drop.
+//! Single pane: path bar + file list + drag/drop + optional image preview.
 
-use egui::{Id, RichText, Vec2};
+use std::sync::Arc;
+
+use egui::{CursorIcon, Id, RichText, Sense, Vec2};
 
 use ssh_split_pane::pathutil;
 use ssh_split_pane::ssh_worker::{PaneSide, RemoteEntry};
@@ -24,6 +26,15 @@ pub struct PaneState {
     pub loading: bool,
     pub error: Option<String>,
     pub selected: Option<String>,
+    /// Image preview toggle (OFF / ON).
+    pub preview_enabled: bool,
+    pub preview_loading: bool,
+    pub preview_error: Option<String>,
+    /// Remote path currently requested or shown.
+    pub preview_path: Option<String>,
+    pub preview_texture: Option<egui::TextureHandle>,
+    /// Fraction of list+preview height used by the preview panel (0.2–0.75).
+    pub preview_ratio: f32,
 }
 
 impl PaneState {
@@ -36,13 +47,36 @@ impl PaneState {
             loading: false,
             error: None,
             selected: None,
+            preview_enabled: false,
+            preview_loading: false,
+            preview_error: None,
+            preview_path: None,
+            preview_texture: None,
+            preview_ratio: 0.40,
         }
     }
 
     pub fn set_path(&mut self, path: String) {
+        if self.cwd != path {
+            self.selected = None;
+            self.clear_preview_content();
+        }
         self.cwd = path.clone();
         self.path_edit = path;
-        self.selected = None;
+    }
+
+    pub fn clear_preview_content(&mut self) {
+        self.preview_loading = false;
+        self.preview_error = None;
+        self.preview_path = None;
+        self.preview_texture = None;
+    }
+
+    pub fn set_preview_enabled(&mut self, enabled: bool) {
+        self.preview_enabled = enabled;
+        if !enabled {
+            self.clear_preview_content();
+        }
     }
 }
 
@@ -51,6 +85,21 @@ pub struct PaneAction {
     pub drop: Option<DragPayload>,
     pub new_folder: bool,
     pub activated: bool,
+    /// Selection or preview toggle changed — app should sync preview.
+    pub preview_sync: bool,
+}
+
+pub fn is_image_filename(name: &str) -> bool {
+    let Some(ext) = std::path::Path::new(name)
+        .extension()
+        .and_then(|e| e.to_str())
+    else {
+        return false;
+    };
+    matches!(
+        ext.to_ascii_lowercase().as_str(),
+        "png" | "jpg" | "jpeg" | "gif" | "webp" | "bmp"
+    )
 }
 
 pub fn show_pane(ui: &mut egui::Ui, pane: &mut PaneState, allow_dnd: bool) -> PaneAction {
@@ -59,6 +108,7 @@ pub fn show_pane(ui: &mut egui::Ui, pane: &mut PaneState, allow_dnd: bool) -> Pa
         drop: None,
         new_folder: false,
         activated: false,
+        preview_sync: false,
     };
 
     let title = match pane.side {
@@ -70,10 +120,11 @@ pub fn show_pane(ui: &mut egui::Ui, pane: &mut PaneState, allow_dnd: bool) -> Pa
     // instead of leaving the old content-sized outline behind.
     let avail = ui.available_size();
     ui.set_min_size(avail);
+    // Clip children so toolbar/path never paint past the pane edge.
+    ui.set_clip_rect(ui.max_rect());
 
     let maximized = ui.input(|i| i.viewport().maximized.unwrap_or(false));
     let stroke = if maximized {
-        // Maximized: no group stroke — old Frame::group outline was the "pre-maximize rim".
         egui::Stroke::NONE
     } else {
         ui.visuals().widgets.noninteractive.bg_stroke
@@ -82,17 +133,21 @@ pub fn show_pane(ui: &mut egui::Ui, pane: &mut PaneState, allow_dnd: bool) -> Pa
         .fill(ui.visuals().extreme_bg_color)
         .stroke(stroke)
         .rounding(if maximized { 0.0 } else { 6.0 })
-        .inner_margin(egui::Margin::same(12.0));
+        .inner_margin(egui::Margin::same(8.0));
 
     frame.show(ui, |ui| {
         ui.set_min_size(ui.available_size());
-        ui.horizontal(|ui| {
+        ui.set_max_width(ui.available_width());
+
+        // Toolbar: wrap when the pane is narrow (esp. maximized dual-pane).
+        ui.horizontal_wrapped(|ui| {
             ui.heading(title);
-            ui.add_space(8.0);
+            ui.add_space(4.0);
             if ui
                 .add_enabled(
                     !pane.loading,
-                    egui::Button::new(RichText::new("⬆ Up").size(18.0)).min_size(Vec2::new(72.0, 36.0)),
+                    egui::Button::new(RichText::new("⬆ Up").size(17.0))
+                        .min_size(Vec2::new(64.0, 32.0)),
                 )
                 .clicked()
             {
@@ -101,7 +156,8 @@ pub fn show_pane(ui: &mut egui::Ui, pane: &mut PaneState, allow_dnd: bool) -> Pa
             if ui
                 .add_enabled(
                     !pane.loading,
-                    egui::Button::new(RichText::new("⟳").size(18.0)).min_size(Vec2::new(44.0, 36.0)),
+                    egui::Button::new(RichText::new("⟳").size(17.0))
+                        .min_size(Vec2::new(40.0, 32.0)),
                 )
                 .on_hover_text("Refresh")
                 .clicked()
@@ -111,30 +167,55 @@ pub fn show_pane(ui: &mut egui::Ui, pane: &mut PaneState, allow_dnd: bool) -> Pa
             if ui
                 .add_enabled(
                     !pane.loading && allow_dnd,
-                    egui::Button::new(RichText::new("+ Folder").size(18.0))
-                        .min_size(Vec2::new(108.0, 36.0)),
+                    egui::Button::new(RichText::new("+ Folder").size(17.0))
+                        .min_size(Vec2::new(96.0, 32.0)),
                 )
                 .on_hover_text("Create a new folder here")
                 .clicked()
             {
                 action.new_folder = true;
             }
+
+            let label = if pane.preview_enabled {
+                "Preview ON"
+            } else {
+                "Preview OFF"
+            };
+            let mut btn = egui::Button::new(RichText::new(label).size(15.0))
+                .min_size(Vec2::new(112.0, 32.0));
+            if pane.preview_enabled {
+                btn = btn.fill(egui::Color32::from_rgb(40, 110, 180));
+            }
+            if ui
+                .add(btn)
+                .on_hover_text("Toggle image preview for this pane")
+                .clicked()
+            {
+                pane.set_preview_enabled(!pane.preview_enabled);
+                action.preview_sync = true;
+            }
         });
 
-        ui.add_space(6.0);
+        ui.add_space(4.0);
 
+        // Path row: leave room for Go; clamp edit width to pane.
         ui.horizontal(|ui| {
+            let go_w = 56.0;
+            let edit_w = (ui.available_width() - go_w - 8.0).max(48.0);
             let resp = ui.add(
                 egui::TextEdit::singleline(&mut pane.path_edit)
-                    .desired_width(ui.available_width() - 72.0)
+                    .desired_width(edit_w)
                     .desired_rows(1)
-                    .margin(egui::Margin::symmetric(10.0, 8.0))
+                    .margin(egui::Margin::symmetric(8.0, 6.0))
                     .hint_text("/remote/path"),
             );
             let enter = resp.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
             if enter
                 || ui
-                    .add(egui::Button::new(RichText::new("Go").size(18.0)).min_size(Vec2::new(60.0, 36.0)))
+                    .add(
+                        egui::Button::new(RichText::new("Go").size(17.0))
+                            .min_size(Vec2::new(go_w, 32.0)),
+                    )
                     .clicked()
             {
                 let p = pane.path_edit.trim();
@@ -147,90 +228,271 @@ pub fn show_pane(ui: &mut egui::Ui, pane: &mut PaneState, allow_dnd: bool) -> Pa
         if pane.loading {
             ui.horizontal(|ui| {
                 ui.spinner();
-                ui.label(RichText::new("Loading…").size(18.0));
+                ui.label(RichText::new("Loading…").size(17.0));
             });
         }
         if let Some(err) = &pane.error {
             ui.colored_label(egui::Color32::from_rgb(220, 80, 80), err);
         }
 
-        ui.add_space(4.0);
+        ui.add_space(2.0);
         ui.separator();
-        ui.add_space(4.0);
+        ui.add_space(2.0);
+
+        const SPLITTER_H: f32 = 8.0;
+        const MIN_LIST: f32 = 100.0;
+        const MIN_PREVIEW: f32 = 100.0;
+
+        let avail_h = ui.available_height();
+        let (list_h, preview_h) = if pane.preview_enabled {
+            let usable = (avail_h - SPLITTER_H).max(MIN_LIST + MIN_PREVIEW);
+            let ratio = pane.preview_ratio.clamp(0.20, 0.75);
+            let mut preview_h = (usable * ratio).clamp(MIN_PREVIEW, usable - MIN_LIST);
+            let mut list_h = usable - preview_h;
+            if list_h < MIN_LIST {
+                list_h = MIN_LIST;
+                preview_h = usable - list_h;
+            }
+            (list_h, preview_h)
+        } else {
+            (avail_h.max(MIN_LIST), 0.0)
+        };
 
         let list_id = Id::new(("pane_list", pane.side as u8));
-        let min_h = ui.available_height().max(240.0);
-
-        let scroll_out = egui::ScrollArea::vertical()
-            .id_salt(list_id)
-            .auto_shrink([false, false])
-            .show(ui, |ui| {
-                ui.set_min_height(min_h);
-                ui.set_min_width(ui.available_width());
-
-                if pane.entries.is_empty() && !pane.loading {
-                    ui.weak(RichText::new("(empty)").size(18.0));
-                }
-
-                for entry in &pane.entries {
-                    let full_path = pathutil::join(&pane.cwd, &entry.name);
-                    let label = if entry.is_dir {
-                        format!("📁  {}", entry.name)
-                    } else {
-                        format!("📄  {}  ({})", entry.name, format_size(entry.size))
-                    };
-
-                    let selected = pane.selected.as_deref() == Some(entry.name.as_str());
-                    let resp = ui.add_sized(
-                        [ui.available_width(), 36.0],
-                        egui::SelectableLabel::new(selected, RichText::new(label).size(19.0)),
-                    );
-
-                    if resp.clicked() {
-                        pane.selected = Some(entry.name.clone());
-                        action.activated = true;
-                    }
-                    if resp.double_clicked() && entry.is_dir {
-                        action.go_path = Some(full_path.clone());
-                    }
-
-                    if allow_dnd {
-                        let payload = DragPayload {
-                            side: pane.side,
-                            remote_path: full_path,
-                            is_dir: entry.is_dir,
-                            name: entry.name.clone(),
-                        };
-                        resp.dnd_set_drag_payload(payload);
-                    }
-                }
-            });
-
-        let drop_resp = ui.interact(
-            scroll_out.inner_rect,
-            list_id.with("drop_target"),
-            egui::Sense::hover(),
+        let list_rect = show_file_list(
+            ui,
+            pane,
+            allow_dnd,
+            list_id,
+            list_h,
+            &mut action,
         );
 
+        // Drop target: detect by pointer-in-rect so row widgets cannot steal hover.
         if allow_dnd {
-            if let Some(payload) = drop_resp.dnd_hover_payload::<DragPayload>() {
-                if payload.side != pane.side {
-                    ui.painter().rect_stroke(
-                        scroll_out.inner_rect,
-                        6.0,
-                        egui::Stroke::new(3.0_f32, egui::Color32::from_rgb(40, 110, 180)),
-                    );
-                }
+            if let Some(payload) = handle_list_drop(ui, pane.side, list_rect) {
+                action.drop = Some(payload);
             }
-            if let Some(payload) = drop_resp.dnd_release_payload::<DragPayload>() {
-                if payload.side != pane.side {
-                    action.drop = Some((*payload).clone());
-                }
+        }
+
+        if pane.preview_enabled {
+            // Draggable splitter between list and preview.
+            let splitter_id = Id::new(("preview_split", pane.side as u8));
+            let splitter_resp = ui
+                .scope_builder(
+                    egui::UiBuilder::new().id_salt(splitter_id),
+                    |ui| {
+                        let (_, resp) = ui.allocate_exact_size(
+                            Vec2::new(ui.available_width(), SPLITTER_H),
+                            Sense::click_and_drag(),
+                        );
+                        resp
+                    },
+                )
+                .inner;
+            // Paint handle
+            let visuals = ui.style().visuals.clone();
+            let fill = if splitter_resp.hovered() || splitter_resp.dragged() {
+                visuals.widgets.hovered.bg_fill
+            } else {
+                visuals.widgets.noninteractive.bg_fill
+            };
+            ui.painter()
+                .rect_filled(splitter_resp.rect, 2.0, fill);
+            let mid_y = splitter_resp.rect.center().y;
+            let mid_x = splitter_resp.rect.center().x;
+            ui.painter().hline(
+                mid_x - 18.0..=mid_x + 18.0,
+                mid_y,
+                egui::Stroke::new(2.0_f32, visuals.widgets.noninteractive.fg_stroke.color),
+            );
+            if splitter_resp.hovered() || splitter_resp.dragged() {
+                ui.ctx().set_cursor_icon(CursorIcon::ResizeVertical);
             }
+            // Dragging down → larger list / smaller preview.
+            if splitter_resp.dragged() {
+                let usable = (list_h + preview_h).max(1.0);
+                let new_preview = (preview_h - splitter_resp.drag_delta().y)
+                    .clamp(MIN_PREVIEW, usable - MIN_LIST);
+                pane.preview_ratio = new_preview / usable;
+                ui.ctx().request_repaint();
+            }
+
+            show_preview_area(ui, pane, preview_h);
         }
     });
 
     action
+}
+
+fn show_file_list(
+    ui: &mut egui::Ui,
+    pane: &mut PaneState,
+    allow_dnd: bool,
+    list_id: Id,
+    list_h: f32,
+    action: &mut PaneAction,
+) -> egui::Rect {
+    let scroll_out = egui::ScrollArea::vertical()
+        .id_salt(list_id)
+        .max_height(list_h)
+        .auto_shrink([false, false])
+        .show(ui, |ui| {
+            ui.set_min_height(list_h);
+            ui.set_min_width(ui.available_width());
+
+            if pane.entries.is_empty() && !pane.loading {
+                ui.weak(RichText::new("(empty)").size(17.0));
+            }
+
+            for entry in &pane.entries {
+                let full_path = pathutil::join(&pane.cwd, &entry.name);
+                let label = if entry.is_dir {
+                    format!("📁  {}", entry.name)
+                } else if is_image_filename(&entry.name) {
+                    format!("🖼  {}  ({})", entry.name, format_size(entry.size))
+                } else {
+                    format!("📄  {}  ({})", entry.name, format_size(entry.size))
+                };
+
+                let selected = pane.selected.as_deref() == Some(entry.name.as_str());
+                // click_and_drag so dnd_set_drag_payload can observe a real drag.
+                let resp = file_row(ui, &label, selected);
+
+                if resp.clicked() {
+                    pane.selected = Some(entry.name.clone());
+                    action.activated = true;
+                    action.preview_sync = true;
+                }
+                if resp.double_clicked() && entry.is_dir {
+                    action.go_path = Some(full_path.clone());
+                }
+
+                if allow_dnd {
+                    let payload = DragPayload {
+                        side: pane.side,
+                        remote_path: full_path,
+                        is_dir: entry.is_dir,
+                        name: entry.name.clone(),
+                    };
+                    resp.dnd_set_drag_payload(payload);
+                }
+            }
+        });
+
+    scroll_out.inner_rect
+}
+
+/// List row with click + drag sense (SelectableLabel alone is click-only → DnD never starts).
+fn file_row(ui: &mut egui::Ui, label: &str, selected: bool) -> egui::Response {
+    let desired = Vec2::new(ui.available_width(), 34.0);
+    let (rect, resp) = ui.allocate_exact_size(desired, Sense::click_and_drag());
+
+    let visuals = ui.style().interact(&resp);
+    let bg = if selected {
+        ui.visuals().selection.bg_fill
+    } else if resp.hovered() || resp.dragged() {
+        visuals.bg_fill
+    } else {
+        egui::Color32::TRANSPARENT
+    };
+    if bg.a() > 0 {
+        ui.painter()
+            .rect_filled(rect, visuals.rounding, bg);
+    }
+
+    let galley = ui.painter().layout_no_wrap(
+        label.to_owned(),
+        egui::FontId::proportional(18.0),
+        if selected {
+            ui.visuals().selection.stroke.color
+        } else {
+            ui.visuals().widgets.noninteractive.fg_stroke.color
+        },
+    );
+    let text_pos = egui::pos2(
+        rect.min.x + 8.0,
+        rect.center().y - galley.size().y * 0.5,
+    );
+    ui.painter().galley(text_pos, galley, visuals.text_color());
+
+    resp
+}
+
+fn handle_list_drop(ui: &mut egui::Ui, side: PaneSide, list_rect: egui::Rect) -> Option<DragPayload> {
+    if !ui.rect_contains_pointer(list_rect) {
+        return None;
+    }
+
+    let hovering = egui::DragAndDrop::payload::<DragPayload>(ui.ctx()).and_then(|p| {
+        if p.side != side {
+            Some(p)
+        } else {
+            None
+        }
+    });
+
+    if hovering.is_some() {
+        ui.painter().rect_stroke(
+            list_rect,
+            6.0,
+            egui::Stroke::new(3.0_f32, egui::Color32::from_rgb(40, 110, 180)),
+        );
+    }
+
+    let released = ui.input(|i| i.pointer.any_released());
+    if released {
+        if let Some(payload) = egui::DragAndDrop::take_payload::<DragPayload>(ui.ctx()) {
+            if payload.side != side {
+                return Some(Arc::unwrap_or_clone(payload));
+            }
+        }
+    }
+    None
+}
+
+fn show_preview_area(ui: &mut egui::Ui, pane: &PaneState, preview_h: f32) {
+    ui.horizontal(|ui| {
+        ui.label(RichText::new("Image preview").size(15.0).strong());
+        if pane.preview_loading {
+            ui.spinner();
+            ui.label(RichText::new("Loading…").size(14.0));
+        }
+    });
+
+    if let Some(err) = &pane.preview_error {
+        ui.colored_label(egui::Color32::from_rgb(220, 80, 80), err);
+    }
+
+    let header_used = 28.0;
+    let body_h = (preview_h - header_used).max(60.0);
+
+    let frame = egui::Frame::none()
+        .fill(ui.visuals().faint_bg_color)
+        .rounding(4.0)
+        .inner_margin(egui::Margin::same(6.0));
+
+    frame.show(ui, |ui| {
+        ui.set_min_height(body_h);
+        ui.set_max_height(body_h);
+        ui.set_min_width(ui.available_width());
+
+        if let Some(tex) = &pane.preview_texture {
+            let avail = ui.available_size();
+            let size = tex.size_vec2();
+            let scale = (avail.x / size.x).min(avail.y / size.y).min(1.0);
+            let drawn = size * scale;
+            ui.centered_and_justified(|ui| {
+                ui.image((tex.id(), drawn));
+            });
+        } else if !pane.preview_loading && pane.preview_error.is_none() {
+            ui.centered_and_justified(|ui| {
+                ui.weak(
+                    RichText::new("Select an image (png / jpg / gif / webp / bmp)").size(15.0),
+                );
+            });
+        }
+    });
 }
 
 fn format_size(n: u64) -> String {

@@ -1,5 +1,6 @@
 //! Background SSH worker: connect, SFTP list, remote cp/mv.
 
+use std::fmt;
 use std::io::Read;
 use std::net::TcpStream;
 use std::path::PathBuf;
@@ -79,7 +80,25 @@ pub enum WorkerRequest {
         parent: String,
         name: String,
     },
+    /// Read a remote file for preview (capped by `max_bytes`).
+    ReadFile {
+        side: PaneSide,
+        path: String,
+        max_bytes: u64,
+    },
     Shutdown,
+}
+
+/// File bytes from the worker; Debug only shows length.
+#[derive(Clone)]
+pub struct FileBytes(pub Vec<u8>);
+
+impl fmt::Debug for FileBytes {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("FileBytes")
+            .field("len", &self.0.len())
+            .finish()
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -119,6 +138,16 @@ pub enum WorkerEvent {
         path: String,
     },
     MkdirFailed {
+        error: String,
+    },
+    FileReadOk {
+        side: PaneSide,
+        path: String,
+        bytes: FileBytes,
+    },
+    FileReadFailed {
+        side: PaneSide,
+        path: String,
         error: String,
     },
     Busy(String),
@@ -344,6 +373,39 @@ fn worker_loop(req_rx: Receiver<WorkerRequest>, ev_tx: Sender<WorkerEvent>) {
                     }
                 }
             }
+            WorkerRequest::ReadFile {
+                side,
+                path,
+                max_bytes,
+            } => {
+                let Some(s) = state.as_mut() else {
+                    let _ = ev_tx.send(WorkerEvent::FileReadFailed {
+                        side,
+                        path,
+                        error: "Not connected".into(),
+                    });
+                    continue;
+                };
+                debug!("read_file side={side:?} path={path} max_bytes={max_bytes}");
+                match read_file(&s.session, &path, max_bytes) {
+                    Ok(bytes) => {
+                        debug!("read_file ok path={path} len={}", bytes.len());
+                        let _ = ev_tx.send(WorkerEvent::FileReadOk {
+                            side,
+                            path,
+                            bytes: FileBytes(bytes),
+                        });
+                    }
+                    Err(e) => {
+                        warn!("read_file failed for {path}: {e}");
+                        let _ = ev_tx.send(WorkerEvent::FileReadFailed {
+                            side,
+                            path,
+                            error: e,
+                        });
+                    }
+                }
+            }
         }
     }
 }
@@ -402,6 +464,25 @@ fn resolve_home(session: &Session) -> Result<String, String> {
             }
         }
     }
+}
+
+fn read_file(session: &Session, path: &str, max_bytes: u64) -> Result<Vec<u8>, String> {
+    let sftp = session.sftp().map_err(|e| format!("SFTP open: {e}"))?;
+    let mut remote = sftp
+        .open(std::path::Path::new(path))
+        .map_err(|e| format!("open {path}: {e}"))?;
+    let mut buf = Vec::new();
+    let mut limited = (&mut remote).take(max_bytes.saturating_add(1));
+    limited
+        .read_to_end(&mut buf)
+        .map_err(|e| format!("read {path}: {e}"))?;
+    if buf.len() as u64 > max_bytes {
+        return Err(format!(
+            "file too large for preview (max {} MB)",
+            max_bytes / (1024 * 1024)
+        ));
+    }
+    Ok(buf)
 }
 
 fn list_dir(session: &Session, path: &str) -> Result<Vec<RemoteEntry>, String> {
