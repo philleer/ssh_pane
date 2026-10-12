@@ -5,10 +5,10 @@ use std::io::Write;
 /// Initialize `env_logger` once.
 ///
 /// Default filter: `info` for this crate, `warn` for noisy dependencies.
-/// Override with `RUST_LOG`, e.g. `RUST_LOG=ssh_split_pane=debug`.
+/// Override with `RUST_LOG`, e.g. `RUST_LOG=ssh_pane=debug`.
 pub fn init() {
     let mut builder = env_logger::Builder::from_env(
-        env_logger::Env::default().default_filter_or("ssh_split_pane=info,warn"),
+        env_logger::Env::default().default_filter_or("ssh_pane=info,warn"),
     );
     builder.format(|buf, record| {
         let ts = buf.timestamp_millis();

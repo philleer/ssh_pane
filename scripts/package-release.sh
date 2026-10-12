@@ -24,9 +24,9 @@ else
   cargo build --profile dist
 fi
 
-BIN="$ROOT/target/dist/ssh_split_pane"
+BIN="$ROOT/target/dist/ssh_pane"
 if [[ ! -f "$BIN" ]]; then
-  BIN="$ROOT/target/release/ssh_split_pane"
+  BIN="$ROOT/target/release/ssh_pane"
 fi
 if [[ ! -f "$BIN" ]]; then
   echo "error: binary not found" >&2
@@ -35,15 +35,15 @@ fi
 
 STAGE="$DIST/stage-linux"
 mkdir -p "$STAGE"
-cp "$BIN" "$STAGE/ssh_split_pane"
+cp "$BIN" "$STAGE/ssh_pane"
 cp LICENSE README.md README-zh.md RELEASE_NOTES.md "$STAGE/"
-tar -C "$STAGE" -czf "$DIST/ssh_split_pane-${TAG}-linux-x86_64.tar.gz" .
+tar -C "$STAGE" -czf "$DIST/ssh_pane-${TAG}-linux-x86_64.tar.gz" .
 rm -rf "$STAGE"
 
-echo "==> Wrote $DIST/ssh_split_pane-${TAG}-linux-x86_64.tar.gz"
+echo "==> Wrote $DIST/ssh_pane-${TAG}-linux-x86_64.tar.gz"
 echo
-echo "Windows: build on MSVC or cross-compile, then zip ssh_split_pane.exe + LICENSE + READMEs as:"
-echo "  ssh_split_pane-${TAG}-windows-x86_64.zip"
+echo "Windows: build on MSVC or cross-compile, then zip ssh_pane.exe + LICENSE + READMEs as:"
+echo "  ssh_pane-${TAG}-windows-x86_64.zip"
 echo
 echo "Publish (after gh auth login + remote):"
 echo "  gh release create ${TAG} dist/* --notes-file RELEASE_NOTES.md"

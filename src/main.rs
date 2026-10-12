@@ -4,7 +4,7 @@ mod ui;
 use app::App;
 
 fn main() -> eframe::Result<()> {
-    ssh_split_pane::logging::init();
+    ssh_pane::logging::init();
     log::info!("SSH Split Pane starting");
 
     // Disable OS/CSD decorations. Their drop-shadow often remains visible as a

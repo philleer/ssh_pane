@@ -2,13 +2,13 @@
 
 use std::time::Duration;
 
-use ssh_split_pane::ssh_worker::{
+use ssh_pane::ssh_worker::{
     ConnectParams, OpMode, PaneSide, WorkerEvent, WorkerHandle, WorkerRequest,
 };
 
 #[test]
 fn scenario_worker_rejects_list_when_disconnected() {
-    ssh_split_pane::logging::init();
+    ssh_pane::logging::init();
     let worker = WorkerHandle::spawn();
     worker.send(WorkerRequest::ListDir {
         side: PaneSide::Left,
@@ -30,7 +30,7 @@ fn scenario_worker_rejects_list_when_disconnected() {
 
 #[test]
 fn scenario_worker_connect_failure_is_reported() {
-    ssh_split_pane::logging::init();
+    ssh_pane::logging::init();
     let worker = WorkerHandle::spawn();
     worker.send(WorkerRequest::Connect(ConnectParams {
         host: "127.0.0.1".into(),

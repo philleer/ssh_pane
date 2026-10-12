@@ -1,6 +1,6 @@
 //! Functional tests: path utilities as used by navigation / DnD.
 
-use ssh_split_pane::pathutil::{basename, join, normalize, parent, shell_quote};
+use ssh_pane::pathutil::{basename, join, normalize, parent, shell_quote};
 
 #[test]
 fn scenario_navigate_up_from_nested_path() {

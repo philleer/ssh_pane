@@ -2,8 +2,8 @@
 
 use egui::{Align, Layout, RichText};
 
-use ssh_split_pane::settings::Settings;
-use ssh_split_pane::ssh_worker::{ConnectParams, WorkerHandle, WorkerRequest};
+use ssh_pane::settings::Settings;
+use ssh_pane::ssh_worker::{ConnectParams, WorkerHandle, WorkerRequest};
 
 #[derive(Clone, Copy, PartialEq, Eq, Default)]
 enum AuthMethod {

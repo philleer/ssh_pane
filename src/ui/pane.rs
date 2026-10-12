@@ -5,8 +5,8 @@ use std::sync::Arc;
 
 use egui::{CursorIcon, Id, RichText, Sense, Vec2};
 
-use ssh_split_pane::pathutil;
-use ssh_split_pane::ssh_worker::{PaneSide, RemoteEntry};
+use ssh_pane::pathutil;
+use ssh_pane::ssh_worker::{PaneSide, RemoteEntry};
 
 /// Payload carried during an egui drag.
 #[derive(Clone, Debug)]

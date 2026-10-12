@@ -2,7 +2,7 @@
 
 use egui::{RichText, Vec2};
 
-use ssh_split_pane::ssh_worker::OpMode;
+use ssh_pane::ssh_worker::OpMode;
 use crate::ui::connect::mode_button;
 
 pub struct ToolbarResult {

@@ -3,8 +3,8 @@
 use eframe::egui::{self, FontFamily, FontId, RichText, TextStyle};
 use log::{info, warn};
 
-use ssh_split_pane::ops;
-use ssh_split_pane::ssh_worker::{
+use ssh_pane::ops;
+use ssh_pane::ssh_worker::{
     OpMode, PaneSide, WorkerEvent, WorkerHandle, WorkerRequest,
 };
 
@@ -66,7 +66,7 @@ pub struct App {
 
 impl App {
     pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
-        ssh_split_pane::fonts::install_cjk_fonts(&cc.egui_ctx);
+        ssh_pane::fonts::install_cjk_fonts(&cc.egui_ctx);
         apply_large_style(&cc.egui_ctx);
         Self {
             screen: Screen::Connect,
@@ -291,7 +291,7 @@ impl App {
             return;
         }
 
-        let path = ssh_split_pane::pathutil::join(&cwd, &name);
+        let path = ssh_pane::pathutil::join(&cwd, &name);
         if current_path.as_deref() == Some(path.as_str()) && (loading || has_tex) {
             return;
         }
@@ -330,17 +330,17 @@ impl App {
         let src_parent = if src.is_empty() {
             String::new()
         } else {
-            ssh_split_pane::pathutil::parent(src)
+            ssh_pane::pathutil::parent(src)
         };
-        let dst_n = ssh_split_pane::pathutil::normalize(dst_dir);
+        let dst_n = ssh_pane::pathutil::normalize(dst_dir);
         let src_n = if src_parent.is_empty() {
             String::new()
         } else {
-            ssh_split_pane::pathutil::normalize(&src_parent)
+            ssh_pane::pathutil::normalize(&src_parent)
         };
 
-        let left_cwd = ssh_split_pane::pathutil::normalize(&self.left.cwd);
-        let right_cwd = ssh_split_pane::pathutil::normalize(&self.right.cwd);
+        let left_cwd = ssh_pane::pathutil::normalize(&self.left.cwd);
+        let right_cwd = ssh_pane::pathutil::normalize(&self.right.cwd);
 
         let need = |cwd: &str| -> bool {
             cwd == dst_n

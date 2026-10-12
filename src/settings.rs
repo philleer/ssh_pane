@@ -16,8 +16,12 @@ pub struct Settings {
 impl Settings {
     pub fn load() -> Self {
         let path = settings_path();
-        let Ok(text) = fs::read_to_string(&path) else {
-            return Self::default();
+        let text = match fs::read_to_string(&path) {
+            Ok(t) => t,
+            Err(_) => match legacy_settings_path().and_then(|p| fs::read_to_string(p).ok()) {
+                Some(t) => t,
+                None => return Self::default(),
+            },
         };
         let mut s = Self::default();
         for line in text.lines() {
@@ -48,7 +52,7 @@ impl Settings {
             }
         }
         let body = format!(
-            "# ssh_split_pane settings\n\
+            "# ssh_pane settings\n\
 remember_user={}\n\
 user={}\n\
 remember_host={}\n\
@@ -93,15 +97,35 @@ fn settings_path() -> PathBuf {
     if let Some(home) = std::env::var_os("HOME") {
         return PathBuf::from(home)
             .join(".config")
-            .join("ssh_split_pane")
+            .join("ssh_pane")
             .join("settings");
     }
     if let Some(appdata) = std::env::var_os("APPDATA") {
         return PathBuf::from(appdata)
-            .join("ssh_split_pane")
+            .join("ssh_pane")
             .join("settings");
     }
-    PathBuf::from("ssh_split_pane_settings")
+    PathBuf::from("ssh_pane_settings")
+}
+
+/// Pre-rename path (`ssh_split_pane`); read-only fallback for existing installs.
+fn legacy_settings_path() -> Option<PathBuf> {
+    if let Some(home) = std::env::var_os("HOME") {
+        return Some(
+            PathBuf::from(home)
+                .join(".config")
+                .join("ssh_split_pane")
+                .join("settings"),
+        );
+    }
+    if let Some(appdata) = std::env::var_os("APPDATA") {
+        return Some(
+            PathBuf::from(appdata)
+                .join("ssh_split_pane")
+                .join("settings"),
+        );
+    }
+    Some(PathBuf::from("ssh_split_pane_settings"))
 }
 
 #[cfg(test)]

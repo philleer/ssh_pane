@@ -2,16 +2,16 @@
 //!
 //! Ignored by default. Enable with:
 //! ```bash
-//! SSH_SPLIT_PANE_TEST_HOST=127.0.0.1 \
-//! SSH_SPLIT_PANE_TEST_PORT=22 \
-//! SSH_SPLIT_PANE_TEST_USER=me \
-//! SSH_SPLIT_PANE_TEST_PASSWORD=secret \
+//! SSH_PANE_TEST_HOST=127.0.0.1 \
+//! SSH_PANE_TEST_PORT=22 \
+//! SSH_PANE_TEST_USER=me \
+//! SSH_PANE_TEST_PASSWORD=secret \
 //! cargo test --test functional_live_ssh -- --ignored --nocapture
 //! ```
 
 use std::time::Duration;
 
-use ssh_split_pane::ssh_worker::{
+use ssh_pane::ssh_worker::{
     ConnectParams, PaneSide, WorkerEvent, WorkerHandle, WorkerRequest,
 };
 
@@ -20,18 +20,18 @@ fn env(name: &str) -> Option<String> {
 }
 
 #[test]
-#[ignore = "requires live SSH; set SSH_SPLIT_PANE_TEST_* env vars"]
+#[ignore = "requires live SSH; set SSH_PANE_TEST_* env vars"]
 fn scenario_live_list_home_and_mkdir_cleanup() {
-    ssh_split_pane::logging::init();
+    ssh_pane::logging::init();
 
-    let host = env("SSH_SPLIT_PANE_TEST_HOST").expect("SSH_SPLIT_PANE_TEST_HOST");
-    let port: u16 = env("SSH_SPLIT_PANE_TEST_PORT")
+    let host = env("SSH_PANE_TEST_HOST").expect("SSH_PANE_TEST_HOST");
+    let port: u16 = env("SSH_PANE_TEST_PORT")
         .unwrap_or_else(|| "22".into())
         .parse()
         .expect("port");
-    let user = env("SSH_SPLIT_PANE_TEST_USER").expect("SSH_SPLIT_PANE_TEST_USER");
-    let password = env("SSH_SPLIT_PANE_TEST_PASSWORD").unwrap_or_default();
-    let key = env("SSH_SPLIT_PANE_TEST_KEY").map(std::path::PathBuf::from);
+    let user = env("SSH_PANE_TEST_USER").expect("SSH_PANE_TEST_USER");
+    let password = env("SSH_PANE_TEST_PASSWORD").unwrap_or_default();
+    let key = env("SSH_PANE_TEST_KEY").map(std::path::PathBuf::from);
 
     let worker = WorkerHandle::spawn();
     worker.send(WorkerRequest::Connect(ConnectParams {
@@ -61,7 +61,7 @@ fn scenario_live_list_home_and_mkdir_cleanup() {
         other => panic!("unexpected: {other:?}"),
     }
 
-    let folder = format!("ssh_split_pane_test_{}", std::process::id());
+    let folder = format!("ssh_pane_test_{}", std::process::id());
     worker.send(WorkerRequest::Mkdir {
         side: PaneSide::Left,
         parent: home.clone(),

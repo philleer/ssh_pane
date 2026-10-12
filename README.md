@@ -10,17 +10,17 @@ Drag items between panes to run remote `cp` or `mv` on the **same host** (no loc
 ## Download
 
 Prebuilt binaries (when published) are on the
-[GitHub Releases](../../releases) page for the latest tag (currently **v0.1.1**).
+[GitHub Releases](../../releases) page for the latest tag (currently **v0.1.2**).
 
 | Platform | Artifact (typical) |
 |----------|--------------------|
-| Linux x86_64 | `ssh_split_pane-v0.1.1-linux-x86_64.tar.gz` |
-| Windows x86_64 | `ssh_split_pane-v0.1.1-windows-x86_64.zip` |
+| Linux x86_64 | `ssh_pane-v0.1.2-linux-x86_64.tar.gz` |
+| Windows x86_64 | `ssh_pane-v0.1.2-windows-x86_64.zip` |
 
 If no release assets are attached yet, build from source (below) or run:
 
 ```bash
-./scripts/package-release.sh v0.1.1
+./scripts/package-release.sh v0.1.2
 ```
 
 See [RELEASE_NOTES.md](RELEASE_NOTES.md) for what changed in each version.
@@ -79,7 +79,7 @@ Report vulnerabilities via [SECURITY.md](SECURITY.md).
 cargo build --release
 ```
 
-Binary: `target\release\ssh_split_pane.exe`
+Binary: `target\release\ssh_pane.exe`
 
 ### Linux / WSL (WSLg for GUI)
 
@@ -94,7 +94,7 @@ sudo apt install build-essential pkg-config libssl-dev
 ./scripts/cargo.sh build --release  # thin LTO (faster than fat LTO)
 ./scripts/cargo.sh build --profile dist  # fat LTO for shipping
 
-./target/release/ssh_split_pane
+./target/release/ssh_pane
 ```
 
 **Build speed notes**
@@ -127,8 +127,8 @@ Operations run as remote shell commands:
 ### Logging
 
 ```bash
-# default: ssh_split_pane=info
-RUST_LOG=ssh_split_pane=debug ./target/release/ssh_split_pane
+# default: ssh_pane=info
+RUST_LOG=ssh_pane=debug ./target/release/ssh_pane
 ```
 
 ## Tests
@@ -141,9 +141,9 @@ cargo test
 cargo test --test functional_ops --test functional_pathutil --test functional_worker
 
 # Optional live SSH functional test (ignored by default)
-SSH_SPLIT_PANE_TEST_HOST=127.0.0.1 \
-SSH_SPLIT_PANE_TEST_USER=me \
-SSH_SPLIT_PANE_TEST_PASSWORD=secret \
+SSH_PANE_TEST_HOST=127.0.0.1 \
+SSH_PANE_TEST_USER=me \
+SSH_PANE_TEST_PASSWORD=secret \
 cargo test --test functional_live_ssh -- --ignored --nocapture
 ```
 

@@ -9,17 +9,17 @@ Windows/Linux 桌面工具：通过 SSH 做**远端双栏**文件浏览。
 
 ## 下载
 
-预编译包（发布后）见 [GitHub Releases](../../releases)，当前标签 **v0.1.1**。
+预编译包（发布后）见 [GitHub Releases](../../releases)，当前标签 **v0.1.2**。
 
 | 平台 | 典型产物名 |
 |------|------------|
-| Linux x86_64 | `ssh_split_pane-v0.1.1-linux-x86_64.tar.gz` |
-| Windows x86_64 | `ssh_split_pane-v0.1.1-windows-x86_64.zip` |
+| Linux x86_64 | `ssh_pane-v0.1.2-linux-x86_64.tar.gz` |
+| Windows x86_64 | `ssh_pane-v0.1.2-windows-x86_64.zip` |
 
 若尚未挂载 Release 资源，可自行编译（见下文），或执行：
 
 ```bash
-./scripts/package-release.sh v0.1.1
+./scripts/package-release.sh v0.1.2
 ```
 
 变更说明见 [RELEASE_NOTES.md](RELEASE_NOTES.md)。
@@ -73,7 +73,7 @@ Windows/Linux 桌面工具：通过 SSH 做**远端双栏**文件浏览。
 cargo build --release
 ```
 
-可执行文件：`target\release\ssh_split_pane.exe`
+可执行文件：`target\release\ssh_pane.exe`
 
 ### Linux / WSL（GUI 需 WSLg）
 
@@ -88,7 +88,7 @@ sudo apt install build-essential pkg-config libssl-dev
 ./scripts/cargo.sh build --release  # thin LTO（比 fat LTO 更快）
 ./scripts/cargo.sh build --profile dist  # fat LTO，适合发布包
 
-./target/release/ssh_split_pane
+./target/release/ssh_pane
 ```
 
 **编译速度说明**
@@ -121,8 +121,8 @@ cargo build --release --target x86_64-pc-windows-gnu
 ### 日志
 
 ```bash
-# 默认：ssh_split_pane=info
-RUST_LOG=ssh_split_pane=debug ./target/release/ssh_split_pane
+# 默认：ssh_pane=info
+RUST_LOG=ssh_pane=debug ./target/release/ssh_pane
 ```
 
 ## 测试
@@ -135,9 +135,9 @@ cargo test
 cargo test --test functional_ops --test functional_pathutil --test functional_worker
 
 # 可选：真实 SSH 功能测试（默认 ignored）
-SSH_SPLIT_PANE_TEST_HOST=127.0.0.1 \
-SSH_SPLIT_PANE_TEST_USER=me \
-SSH_SPLIT_PANE_TEST_PASSWORD=secret \
+SSH_PANE_TEST_HOST=127.0.0.1 \
+SSH_PANE_TEST_USER=me \
+SSH_PANE_TEST_PASSWORD=secret \
 cargo test --test functional_live_ssh -- --ignored --nocapture
 ```
 

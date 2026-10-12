@@ -1,5 +1,10 @@
 # Release Notes
 
+## v0.1.2
+
+- Rename crate / binary / config / env vars from `ssh_split_pane` to `ssh_pane` (UI display name remains **SSH Split Pane**)
+- Settings still load from the old `ssh_split_pane` config path if present
+
 ## v0.1.1
 
 - Login **Auth** toggle: default **Password**, or switch to **Private key**

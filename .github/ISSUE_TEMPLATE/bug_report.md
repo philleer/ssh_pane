@@ -24,7 +24,7 @@ A clear description of what went wrong.
 
 **Logs**
 ```
-RUST_LOG=ssh_split_pane=debug …
+RUST_LOG=ssh_pane=debug …
 ```
 
 **Screenshots**

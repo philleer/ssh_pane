@@ -3,10 +3,10 @@
 //! These exercises cover end-to-end *decision* flows the UI/worker rely on:
 //! copy/move planning, overwrite sequences, mkdir validation, and quoting.
 
-use ssh_split_pane::ops::{
+use ssh_pane::ops::{
     self, OpsError, copy_command, move_command, plan_mkdir, plan_transfer, validate_folder_name,
 };
-use ssh_split_pane::ssh_worker::OpMode;
+use ssh_pane::ssh_worker::OpMode;
 
 #[test]
 fn scenario_copy_file_between_folders() {
