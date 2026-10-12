@@ -25,6 +25,12 @@ If no release assets are attached yet, build from source (below) or run:
 
 See [RELEASE_NOTES.md](RELEASE_NOTES.md) for what changed in each version.
 
+## Screenshots
+
+![Connect](docs/screenshots/connect.png)
+
+![Dual pane](docs/screenshots/dual-pane.png)
+
 ## Features
 
 - Connect via password or private key (toggle on the login form)

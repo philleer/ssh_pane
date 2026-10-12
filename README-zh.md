@@ -24,6 +24,12 @@ Windows/Linux 桌面工具：通过 SSH 做**远端双栏**文件浏览。
 
 变更说明见 [RELEASE_NOTES.md](RELEASE_NOTES.md)。
 
+## 截图
+
+![登录页](docs/screenshots/connect.png)
+
+![双栏工作区](docs/screenshots/dual-pane.png)
+
 ## 功能
 
 - 密码或私钥登录（登录页 **Auth** 切换）
