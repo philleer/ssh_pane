@@ -1,5 +1,7 @@
 # Build time analysis
 
+FAQ-style write-up of the release / incremental question: [FAQs.md](FAQs.md).
+
 ## Why your ~35s “incremental release” is slow
 
 Progress stuck on `380/381: ssh_pane(bin)` means **dependencies are fine**; almost all time is **recompiling this crate + linking**.

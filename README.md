@@ -95,7 +95,7 @@ sudo apt install build-essential pkg-config libssl-dev
 - Dev profile optimizes dependencies (`opt-level = 2`) for snappier egui while your crates stay quick to recompile.
 - Default `--release` uses **thin LTO**; use `--profile dist` when you want maximum size/speed optimization.
 - With `mold` and `sccache` on `PATH`, the wrapper turns them on automatically (helps a lot with vendored OpenSSL).
-- Longer write-up: [docs/BUILD.md](docs/BUILD.md) (OpenSSL/egui/LTO tradeoffs).
+- Longer write-up: [docs/BUILD.md](docs/BUILD.md); why release “incremental” is slow: [docs/FAQs.md](docs/FAQs.md).
 
 Cross-compile for Windows from Linux (optional):
 

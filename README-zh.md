@@ -94,7 +94,7 @@ sudo apt install build-essential pkg-config libssl-dev
 - Dev profile 会对依赖开 `opt-level = 2`，egui 更流畅，自己的 crate 仍能较快重编。
 - 默认 `--release` 使用 **thin LTO**；需要极致体积/速度时用 `--profile dist`。
 - `PATH` 里有 `mold` 和 `sccache` 时，包装脚本会自动打开（对 vendored OpenSSL 帮助很大）。
-- 更详细的编译耗时说明见 [docs/BUILD.md](docs/BUILD.md)。
+- 更详细的编译耗时说明见 [docs/BUILD.md](docs/BUILD.md)；release「增量」仍慢见 [docs/FAQs.md](docs/FAQs.md)。
 
 从 Linux 交叉编译 Windows（可选）：
 
