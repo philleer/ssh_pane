@@ -10,17 +10,17 @@ Drag items between panes to run remote `cp` or `mv` on the **same host** (no loc
 ## Download
 
 Prebuilt binaries (when published) are on the
-[GitHub Releases](../../releases) page for the latest tag (currently **v0.1.2**).
+[GitHub Releases](../../releases) page for the latest tag (currently **v0.1.3**).
 
 | Platform | Artifact (typical) |
 |----------|--------------------|
-| Linux x86_64 | `ssh_pane-v0.1.2-linux-x86_64.tar.gz` |
-| Windows x86_64 | `ssh_pane-v0.1.2-windows-x86_64.zip` |
+| Linux x86_64 | `ssh_pane-v0.1.3-linux-x86_64.tar.gz` |
+| Windows x86_64 | `ssh_pane-v0.1.3-windows-x86_64.zip` |
 
 If no release assets are attached yet, build from source (below) or run:
 
 ```bash
-./scripts/package-release.sh v0.1.2
+./scripts/package-release.sh v0.1.3
 ```
 
 See [RELEASE_NOTES.md](RELEASE_NOTES.md) for what changed in each version.

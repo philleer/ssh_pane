@@ -9,17 +9,17 @@ Windows/Linux 桌面工具：通过 SSH 做**远端双栏**文件浏览。
 
 ## 下载
 
-预编译包（发布后）见 [GitHub Releases](../../releases)，当前标签 **v0.1.2**。
+预编译包（发布后）见 [GitHub Releases](../../releases)，当前标签 **v0.1.3**。
 
 | 平台 | 典型产物名 |
 |------|------------|
-| Linux x86_64 | `ssh_pane-v0.1.2-linux-x86_64.tar.gz` |
-| Windows x86_64 | `ssh_pane-v0.1.2-windows-x86_64.zip` |
+| Linux x86_64 | `ssh_pane-v0.1.3-linux-x86_64.tar.gz` |
+| Windows x86_64 | `ssh_pane-v0.1.3-windows-x86_64.zip` |
 
 若尚未挂载 Release 资源，可自行编译（见下文），或执行：
 
 ```bash
-./scripts/package-release.sh v0.1.2
+./scripts/package-release.sh v0.1.3
 ```
 
 变更说明见 [RELEASE_NOTES.md](RELEASE_NOTES.md)。

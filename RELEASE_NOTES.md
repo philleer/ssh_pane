@@ -1,5 +1,10 @@
 # Release Notes
 
+## v0.1.3
+
+- **Preview** button label only (color shows on/off); item count sits after the filter box
+- Add `--profile rel` for fast optimized incremental builds (see `docs/BUILD.md`)
+
 ## v0.1.2
 
 - Rename crate / binary / config / env vars from `ssh_split_pane` to `ssh_pane` (UI display name remains **SSH Split Pane**)
