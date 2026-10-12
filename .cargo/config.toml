@@ -8,6 +8,8 @@
 incremental = true
 
 [alias]
+# Day-to-day optimized binary without LTO link tax
+rel = "build --profile rel"
 # Thin-LTO release (default [profile.release])
 br = "build --release"
 # Fat-LTO shipping build

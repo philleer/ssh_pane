@@ -35,7 +35,7 @@ See [RELEASE_NOTES.md](RELEASE_NOTES.md) for what changed in each version.
 - Drag from one pane to the other to copy or move on the server
 - **Ctrl+click** multi-select; right-click → **Move N items to other pane**
 - Per-pane **Filter** box (case-insensitive name substring)
-- Per-pane **Preview ON/OFF** toggle for remote image preview (png/jpg/gif/webp/bmp)
+- Per-pane **Preview** toggle (highlighted when on) for remote image preview (png/jpg/gif/webp/bmp)
 - Create new folders (pane **+ Folder** or File menu)
 - Overwrite confirmation when the destination name already exists
 - Structured logging via `log` / `env_logger`

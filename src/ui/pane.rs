@@ -215,19 +215,18 @@ pub fn show_pane(ui: &mut egui::Ui, pane: &mut PaneState, allow_dnd: bool) -> Pa
                 action.new_folder = true;
             }
 
-            let label = if pane.preview_enabled {
-                "Preview ON"
-            } else {
-                "Preview OFF"
-            };
-            let mut btn = egui::Button::new(RichText::new(label).size(15.0))
-                .min_size(Vec2::new(112.0, 32.0));
+            let mut btn = egui::Button::new(RichText::new("Preview").size(15.0))
+                .min_size(Vec2::new(88.0, 32.0));
             if pane.preview_enabled {
                 btn = btn.fill(egui::Color32::from_rgb(40, 110, 180));
             }
             if ui
                 .add(btn)
-                .on_hover_text("Toggle image preview for this pane")
+                .on_hover_text(if pane.preview_enabled {
+                    "Preview on — click to turn off"
+                } else {
+                    "Preview off — click to turn on"
+                })
                 .clicked()
             {
                 pane.set_preview_enabled(!pane.preview_enabled);
@@ -253,6 +252,24 @@ pub fn show_pane(ui: &mut egui::Ui, pane: &mut PaneState, allow_dnd: bool) -> Pa
             {
                 pane.filter.clear();
             }
+
+            let total = pane.entries.len();
+            let shown = if pane.filter.trim().is_empty() {
+                total
+            } else {
+                pane.filtered_entries().len()
+            };
+            let count_text = if pane.filter.trim().is_empty() {
+                if total == 1 {
+                    "1 item".to_string()
+                } else {
+                    format!("{total} items")
+                }
+            } else {
+                format!("{shown} / {total}")
+            };
+            ui.add_space(4.0);
+            ui.label(RichText::new(count_text).size(12.0).weak());
         });
 
         ui.add_space(4.0);
@@ -293,23 +310,6 @@ pub fn show_pane(ui: &mut egui::Ui, pane: &mut PaneState, allow_dnd: bool) -> Pa
         if let Some(err) = &pane.error {
             ui.colored_label(egui::Color32::from_rgb(220, 80, 80), err);
         }
-
-        let total = pane.entries.len();
-        let shown = if pane.filter.trim().is_empty() {
-            total
-        } else {
-            pane.filtered_entries().len()
-        };
-        let count_text = if pane.filter.trim().is_empty() {
-            if total == 1 {
-                "1 item".to_string()
-            } else {
-                format!("{total} items")
-            }
-        } else {
-            format!("{shown} / {total}")
-        };
-        ui.label(RichText::new(count_text).size(12.0).weak());
 
         ui.add_space(2.0);
         ui.separator();

@@ -34,7 +34,7 @@ Windows/Linux 桌面工具：通过 SSH 做**远端双栏**文件浏览。
 - 从一侧拖到另一侧，在服务器上复制或移动
 - **Ctrl+点击** 多选；右键 → **Move N items to other pane**
 - 每栏 **Filter** 过滤框（不区分大小写的名称子串）
-- 每栏 **Preview ON/OFF**，远端图片预览（png/jpg/gif/webp/bmp）
+- 每栏 **Preview** 开关（高亮表示开启），远端图片预览（png/jpg/gif/webp/bmp）
 - 新建文件夹（面板 **+ Folder** 或 File 菜单）
 - 目标已存在同名项时弹出覆盖确认
 - 通过 `log` / `env_logger` 做结构化日志

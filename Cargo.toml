@@ -24,13 +24,25 @@ image = { version = "0.25.10", default-features = false, features = ["jpeg", "pn
 opt-level = 2
 
 # Default release: thin LTO — much faster to link than fat LTO, still small/fast.
+# Note: Cargo disables incremental for `release`, so a one-crate edit still
+# pays a full thin-LTO link (~30s here). Prefer `dev` or `--profile rel` while iterating.
 [profile.release]
 lto = "thin"
 codegen-units = 8
 strip = true
+
+# Fast “almost release” for local UI iteration: opt-level 3, no LTO, incremental on.
+# Expect ~few seconds after the first build, vs ~30s+ for `cargo build --release`.
+[profile.rel]
+inherits = "release"
+lto = false
+codegen-units = 16
+incremental = true
+strip = false
 
 # Shipping / size-sensitive builds: `cargo build --profile dist`
 [profile.dist]
 inherits = "release"
 lto = true
 codegen-units = 1
+strip = true

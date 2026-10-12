@@ -1,34 +1,52 @@
 # Build time analysis
 
-## Why first / release builds feel slow
+## Why your ~35s “incremental release” is slow
 
-| Cost center | Why it hurts | Mitigation already in repo |
-|-------------|--------------|----------------------------|
-| **`ssh2` + `vendored-openssl`** | Compiles OpenSSL from C on first build; minutes on cold cache | `sccache` via `./scripts/cargo.sh`; keep `CARGO_TARGET_DIR=./target` |
-| **`eframe` / `egui` / wgpu stack** | Large Rust dependency graph | Dev profile uses incremental; mold linker on Linux |
-| **`image` codecs** | jpeg/png/gif/webp/bmp each add compile work | Features already trimmed (`default-features = false`) |
-| **`[profile.dev.package."*"] opt-level = 2`** | Dependencies compiled optimized → **first** `cargo build` slower, day-to-day UI snappier | Intentional tradeoff; our crates stay `opt-level = 0` |
-| **`[profile.release] lto = "thin"`** | Link-time optimization adds link time | Prefer `./scripts/cargo.sh build --release` over `--profile dist` while iterating |
-| **`[profile.dist]` fat LTO + `codegen-units = 1`** | Slowest link; for shipping only | Use only for final packages (`./scripts/package-release.sh`) |
+Progress stuck on `380/381: ssh_pane(bin)` means **dependencies are fine**; almost all time is **recompiling this crate + linking**.
 
-## Expected rough times (cold vs warm)
+For `cargo build --release`:
 
-- **Cold debug** (no sccache): often dominated by OpenSSL + egui (several minutes).
-- **Warm incremental** (edit `src/ui/*.rs`): usually seconds with incremental + mold.
-- **Release / dist**: link phase dominates; `dist` ≫ `release` (thin LTO).
+1. Cargo **turns off incremental** on the `release` profile by default.
+2. This project enables **`lto = "thin"`**, so every binary rebuild re-runs thin LTO over egui/ssh2/etc.
+3. Result: a one-line UI edit still costs ~30s+ even though only `ssh_pane` shows as compiling.
+
+Full cold release (~1m) is dominated by deps once; warm “incremental release” is dominated by **LTO link**, not by missing sccache/mold.
+
+## What to use when
+
+| Goal | Command | Expectation |
+|------|---------|-------------|
+| Daily UI work | `./scripts/cargo.sh build` | Seconds after warm cache (deps already `opt-level=2`) |
+| Fast optimized binary | `./scripts/cargo.sh build --profile rel` | Near-release speed, **no LTO**, incremental on |
+| Try / share release binary | `./scripts/cargo.sh build --release` | ~1m cold / ~30s+ per edit (thin LTO) |
+| Ship smallest/fastest | `./scripts/cargo.sh build --profile dist` | Slowest link; packaging only |
+
+Aliases (via `.cargo/config.toml`): `cargo rel`, `cargo br`, `cargo dist` (prefer `./scripts/cargo.sh …`).
+
+## Cost centers (cold builds)
+
+| Cost center | Why it hurts | Mitigation |
+|-------------|--------------|------------|
+| **`ssh2` + `vendored-openssl`** | Compiles OpenSSL from C | `sccache` + keep `./target` |
+| **`eframe` / `egui`** | Huge dep graph | Don’t `cargo clean` casually |
+| **`image` codecs** | Extra crates | Features already trimmed |
+| **`dev.package.*` opt-level=2** | First debug slower, runtime snappier | Intentional |
+| **`release` thin LTO** | Every bin link expensive | Use `rel` or `dev` to iterate |
+| **`dist` fat LTO** | Slowest | Ship only |
 
 ## Recommended commands
 
 ```bash
-./scripts/cargo.sh build              # daily
-./scripts/cargo.sh build --release    # try binaries
-./scripts/cargo.sh build --profile dist   # ship only
-sccache -s                            # see cache hit rate if installed
+./scripts/cargo.sh build                 # daily (debug + optimized deps)
+./scripts/cargo.sh build --profile rel   # optimized, fast incremental
+./scripts/cargo.sh build --release       # thin LTO when you need it
+./scripts/cargo.sh build --profile dist  # final package
+sccache -s                               # cache hit rate
 ```
 
-## If builds are still slow
+## If `rel` / `dev` is still slow
 
-1. Confirm you use `./scripts/cargo.sh` (mold + sccache + fixed `./target`).
-2. Avoid `cargo clean` unless necessary (wipes OpenSSL/egui artifacts).
-3. Do not use `--profile dist` for local UI iteration.
-4. Optional: `cargo build -j$(nproc)` is default; disk on WSL/antivirus can bottleneck more than CPU.
+1. Use `./scripts/cargo.sh` (mold + sccache + fixed `./target`).
+2. Avoid `cargo clean`.
+3. WSL disk / antivirus can dominate link time more than CPU.
+4. Do not iterate on `--release` or `--profile dist`.
