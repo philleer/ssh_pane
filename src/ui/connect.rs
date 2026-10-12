@@ -5,6 +5,13 @@ use egui::{Align, Layout, RichText};
 use ssh_split_pane::settings::Settings;
 use ssh_split_pane::ssh_worker::{ConnectParams, WorkerHandle, WorkerRequest};
 
+#[derive(Clone, Copy, PartialEq, Eq, Default)]
+enum AuthMethod {
+    #[default]
+    Password,
+    PrivateKey,
+}
+
 #[derive(Default)]
 pub struct ConnectForm {
     pub host: String,
@@ -12,6 +19,7 @@ pub struct ConnectForm {
     pub user: String,
     pub password: String,
     pub private_key: String,
+    auth: AuthMethod,
     pub remember_user: bool,
     pub remember_host: bool,
     pub connecting: bool,
@@ -35,6 +43,7 @@ impl ConnectForm {
             },
             password: String::new(),
             private_key: String::new(),
+            auth: AuthMethod::Password,
             remember_user: settings.remember_user,
             remember_host: settings.remember_host,
             connecting: false,
@@ -139,36 +148,66 @@ impl ConnectForm {
                             });
                             ui.end_row();
 
-                            ui.label(RichText::new("Password").size(18.0));
-                            ui.add(
-                                egui::TextEdit::singleline(&mut self.password)
-                                    .password(true)
-                                    .desired_width(320.0)
-                                    .margin(egui::Margin::symmetric(10.0, 8.0)),
-                            );
-                            ui.end_row();
-
-                            ui.label(RichText::new("Private key").size(18.0));
+                            ui.label(RichText::new("Auth").size(18.0));
                             ui.horizontal(|ui| {
-                                ui.add(
-                                    egui::TextEdit::singleline(&mut self.private_key)
-                                        .desired_width(240.0)
-                                        .margin(egui::Margin::symmetric(10.0, 8.0))
-                                        .hint_text("optional path"),
-                                );
-                                if ui
-                                    .add(
-                                        egui::Button::new(RichText::new("Browse…").size(18.0))
-                                            .min_size(egui::vec2(104.0, 38.0)),
-                                    )
-                                    .clicked()
+                                if mode_button(
+                                    ui,
+                                    "Password",
+                                    self.auth == AuthMethod::Password,
+                                )
+                                .clicked()
                                 {
-                                    if let Some(path) = rfd::FileDialog::new().pick_file() {
-                                        self.private_key = path.display().to_string();
-                                    }
+                                    self.auth = AuthMethod::Password;
+                                }
+                                if mode_button(
+                                    ui,
+                                    "Private key",
+                                    self.auth == AuthMethod::PrivateKey,
+                                )
+                                .clicked()
+                                {
+                                    self.auth = AuthMethod::PrivateKey;
                                 }
                             });
                             ui.end_row();
+
+                            match self.auth {
+                                AuthMethod::Password => {
+                                    ui.label(RichText::new("Password").size(18.0));
+                                    ui.add(
+                                        egui::TextEdit::singleline(&mut self.password)
+                                            .password(true)
+                                            .desired_width(320.0)
+                                            .margin(egui::Margin::symmetric(10.0, 8.0)),
+                                    );
+                                    ui.end_row();
+                                }
+                                AuthMethod::PrivateKey => {
+                                    ui.label(RichText::new("Private key").size(18.0));
+                                    ui.horizontal(|ui| {
+                                        ui.add(
+                                            egui::TextEdit::singleline(&mut self.private_key)
+                                                .desired_width(240.0)
+                                                .margin(egui::Margin::symmetric(10.0, 8.0))
+                                                .hint_text("path to key file"),
+                                        );
+                                        if ui
+                                            .add(
+                                                egui::Button::new(
+                                                    RichText::new("Browse…").size(18.0),
+                                                )
+                                                .min_size(egui::vec2(104.0, 38.0)),
+                                            )
+                                            .clicked()
+                                        {
+                                            if let Some(path) = rfd::FileDialog::new().pick_file() {
+                                                self.private_key = path.display().to_string();
+                                            }
+                                        }
+                                    });
+                                    ui.end_row();
+                                }
+                            }
                         });
 
                     ui.add_space(20.0);
@@ -240,21 +279,25 @@ impl ConnectForm {
             .trim()
             .parse()
             .map_err(|_| "Port must be a number".to_string())?;
-        let key = self.private_key.trim();
-        let private_key = if key.is_empty() {
-            None
-        } else {
-            let p = std::path::PathBuf::from(key);
-            if !p.is_file() {
-                return Err(format!("Private key not found: {key}"));
+        let (password, private_key) = match self.auth {
+            AuthMethod::Password => (self.password.clone(), None),
+            AuthMethod::PrivateKey => {
+                let key = self.private_key.trim();
+                if key.is_empty() {
+                    return Err("Private key path is required".into());
+                }
+                let p = std::path::PathBuf::from(key);
+                if !p.is_file() {
+                    return Err(format!("Private key not found: {key}"));
+                }
+                (String::new(), Some(p))
             }
-            Some(p)
         };
         Ok(ConnectParams {
             host: self.host.trim().to_string(),
             port,
             user: self.user.trim().to_string(),
-            password: self.password.clone(),
+            password,
             private_key,
         })
     }
