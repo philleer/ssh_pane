@@ -1,0 +1,6 @@
+blank_issues_enabled: true
+# After the repo is public, uncomment and set your GitHub path:
+# contact_links:
+#   - name: Security report
+#     url: https://github.com/<you>/ssh_split_pane/blob/main/SECURITY.md
+#     about: Do not file public issues for vulnerabilities — see SECURITY.md

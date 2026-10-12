@@ -1,11 +1,42 @@
 # SSH Split Pane
 
+[English](README.md) | [中文](README-zh.md)
+
 Windows/Linux desktop tool for **remote dual-pane** file browsing over SSH.
-Drag items between panes to run remote `cp` or `mv` on the same host (no local file transfer).
+Drag items between panes to run remote `cp` or `mv` on the **same host** (no local file transfer — not an SFTP sync client).
+
+**Slogan:** Same-host dual pane — drag to `cp`/`mv` over SSH.
+
+## Download
+
+Prebuilt binaries (when published) are on the
+[GitHub Releases](../../releases) page for the latest tag (currently **v0.1.1**).
+
+| Platform | Artifact (typical) |
+|----------|--------------------|
+| Linux x86_64 | `ssh_split_pane-v0.1.1-linux-x86_64.tar.gz` |
+| Windows x86_64 | `ssh_split_pane-v0.1.1-windows-x86_64.zip` |
+
+If no release assets are attached yet, build from source (below) or run:
+
+```bash
+./scripts/package-release.sh v0.1.1
+```
+
+See [RELEASE_NOTES.md](RELEASE_NOTES.md) for what changed in each version.
+
+## Screenshots
+
+> Add `docs/screenshots/connect.png` and `docs/screenshots/dual-pane.png` (see [docs/screenshots/README.md](docs/screenshots/README.md)).
+
+<!--
+![Connect](docs/screenshots/connect.png)
+![Dual pane](docs/screenshots/dual-pane.png)
+-->
 
 ## Features
 
-- Connect via password or private key (no passphrase in v0.1)
+- Connect via password or private key (toggle on the login form)
 - **File / View / Help** menu bar
 - **CP / MV** mode toggle (highlighted toolbar buttons)
 - Split left/right panes, each with its own remote path
@@ -16,6 +47,22 @@ Drag items between panes to run remote `cp` or `mv` on the same host (no local f
 - Create new folders (pane **+ Folder** or File menu)
 - Overwrite confirmation when the destination name already exists
 - Structured logging via `log` / `env_logger`
+
+## Known limitations (v0.1)
+
+- Private keys with a **passphrase** are not supported yet
+- Operations are **same-host only** (remote `cp`/`mv`); no cross-host or local↔remote sync
+- **Host key** is not verified against `known_hosts` (trust-on-first-use / MITM risk on untrusted networks)
+- **Passwords are not persisted**; only optional remember of host / username
+- No macOS build instructions in-tree yet
+
+## Security notes
+
+- Do not commit credentials; live SSH tests use environment variables only
+- Prefer private keys over passwords when possible
+- Treat early versions as convenient tools for trusted networks/hosts
+
+Report vulnerabilities via [SECURITY.md](SECURITY.md).
 
 ## Requirements
 
@@ -67,7 +114,7 @@ cargo build --release --target x86_64-pc-windows-gnu
 
 ## Usage
 
-1. Launch the app and enter host, port, user, and password (or pick a private key).
+1. Launch the app and enter host, port, and user. Choose **Auth: Password** or **Private key** (default is password). Press **Enter** in the credential field to connect.
 2. After connect, choose **CP** or **MV** in the toolbar.
 3. Navigate each pane (double-click folders, **Up**, path + **Go**).
 4. Drag a file or folder from one pane onto the other pane’s list.
@@ -119,6 +166,10 @@ tests/
   functional_live_ssh.rs  # optional live SSH (--ignored)
 ```
 
+## Contributing / opening the repo
+
+See [OPEN_SOURCE.md](OPEN_SOURCE.md) for the publish checklist (license, topics, first Release).
+
 ## License
 
-MIT
+[MIT](LICENSE) © 2026 phillee
