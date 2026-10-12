@@ -55,8 +55,10 @@ impl ConnectForm {
     pub fn show(&mut self, ctx: &egui::Context, worker: &WorkerHandle) -> bool {
         let fill = ctx.style().visuals.panel_fill;
         // Title bar already shows the product name; keep a weak slogan at the bottom.
+        // Slogan stays below main form labels (FORM_LABEL_SIZE) so it never dominates.
+        const SLOGAN_SIZE: f32 = 19.0;
         egui::TopBottomPanel::bottom("connect_slogan")
-            .exact_height(44.0)
+            .exact_height(48.0)
             .frame(
                 egui::Frame::none()
                     .fill(fill)
@@ -67,7 +69,7 @@ impl ConnectForm {
                 ui.vertical_centered(|ui| {
                     ui.label(
                         RichText::new("Same-host dual pane — drag to cp/mv over SSH.")
-                            .size(17.0)
+                            .size(SLOGAN_SIZE)
                             .weak(),
                     );
                 });
@@ -90,9 +92,12 @@ impl ConnectForm {
     pub fn show_in(&mut self, ui: &mut egui::Ui, worker: &WorkerHandle) -> bool {
         let mut requested = false;
         let mut submit = false;
-        const FORM_WIDTH: f32 = 620.0;
+        const FORM_WIDTH: f32 = 640.0;
         // Host/Port/User/Password + link + Connect — used to vertically center the block.
-        const FORM_HEIGHT: f32 = 360.0;
+        const FORM_HEIGHT: f32 = 380.0;
+        // Main form label size; slogan must stay smaller than this.
+        const FORM_LABEL_SIZE: f32 = 21.0;
+        const FORM_SECONDARY_SIZE: f32 = 17.0;
 
         let avail = ui.available_size();
         let top_pad = ((avail.y - FORM_HEIGHT) * 0.5).max(0.0);
@@ -108,21 +113,21 @@ impl ConnectForm {
                     ui.set_max_width(FORM_WIDTH);
                     egui::Grid::new("connect_grid")
                         .num_columns(2)
-                        .spacing([16.0, 12.0])
+                        .spacing([16.0, 14.0])
                         .show(ui, |ui| {
-                            ui.label(RichText::new("Host").size(18.0));
+                            ui.label(RichText::new("Host").size(FORM_LABEL_SIZE));
                             ui.horizontal(|ui| {
                                 ui.add(
                                     egui::TextEdit::singleline(&mut self.host)
-                                        .desired_width(260.0)
-                                        .margin(egui::Margin::symmetric(10.0, 8.0))
+                                        .desired_width(280.0)
+                                        .margin(egui::Margin::symmetric(10.0, 10.0))
                                         .hint_text("hostname or IP"),
                                 );
                                 ui.add_space(8.0);
                                 if ui
                                     .checkbox(
                                         &mut self.remember_host,
-                                        RichText::new("Remember Me").size(15.0),
+                                        RichText::new("Remember Me").size(FORM_SECONDARY_SIZE),
                                     )
                                     .on_hover_text("Remember host IP")
                                     .changed()
@@ -132,27 +137,27 @@ impl ConnectForm {
                             });
                             ui.end_row();
 
-                            ui.label(RichText::new("Port").size(18.0));
+                            ui.label(RichText::new("Port").size(FORM_LABEL_SIZE));
                             ui.add(
                                 egui::TextEdit::singleline(&mut self.port)
-                                    .desired_width(100.0)
-                                    .margin(egui::Margin::symmetric(10.0, 8.0))
+                                    .desired_width(110.0)
+                                    .margin(egui::Margin::symmetric(10.0, 10.0))
                                     .hint_text("22"),
                             );
                             ui.end_row();
 
-                            ui.label(RichText::new("User").size(18.0));
+                            ui.label(RichText::new("User").size(FORM_LABEL_SIZE));
                             ui.horizontal(|ui| {
                                 ui.add(
                                     egui::TextEdit::singleline(&mut self.user)
-                                        .desired_width(260.0)
-                                        .margin(egui::Margin::symmetric(10.0, 8.0)),
+                                        .desired_width(280.0)
+                                        .margin(egui::Margin::symmetric(10.0, 10.0)),
                                 );
                                 ui.add_space(8.0);
                                 if ui
                                     .checkbox(
                                         &mut self.remember_user,
-                                        RichText::new("Remember Me").size(15.0),
+                                        RichText::new("Remember Me").size(FORM_SECONDARY_SIZE),
                                     )
                                     .on_hover_text("Remember username")
                                     .changed()
@@ -164,13 +169,13 @@ impl ConnectForm {
 
                             match self.auth {
                                 AuthMethod::Password => {
-                                    ui.label(RichText::new("Password").size(18.0));
+                                    ui.label(RichText::new("Password").size(FORM_LABEL_SIZE));
                                     ui.vertical(|ui| {
                                         let resp = ui.add(
                                             egui::TextEdit::singleline(&mut self.password)
                                                 .password(true)
-                                                .desired_width(320.0)
-                                                .margin(egui::Margin::symmetric(10.0, 8.0)),
+                                                .desired_width(340.0)
+                                                .margin(egui::Margin::symmetric(10.0, 10.0)),
                                         );
                                         if resp.lost_focus()
                                             && ui.input(|i| i.key_pressed(egui::Key::Enter))
@@ -179,7 +184,10 @@ impl ConnectForm {
                                         }
                                         ui.add_space(4.0);
                                         if ui
-                                            .link(RichText::new("Use private key…").size(15.0))
+                                            .link(
+                                                RichText::new("Use private key…")
+                                                    .size(FORM_SECONDARY_SIZE),
+                                            )
                                             .on_hover_text(
                                                 "Authenticate with an SSH private key file instead",
                                             )
@@ -191,15 +199,15 @@ impl ConnectForm {
                                     ui.end_row();
                                 }
                                 AuthMethod::PrivateKey => {
-                                    ui.label(RichText::new("Private key").size(18.0));
+                                    ui.label(RichText::new("Private key").size(FORM_LABEL_SIZE));
                                     ui.vertical(|ui| {
                                         ui.horizontal(|ui| {
                                             let resp = ui.add(
                                                 egui::TextEdit::singleline(
                                                     &mut self.private_key,
                                                 )
-                                                .desired_width(240.0)
-                                                .margin(egui::Margin::symmetric(10.0, 8.0))
+                                                .desired_width(250.0)
+                                                .margin(egui::Margin::symmetric(10.0, 10.0))
                                                 .hint_text("path to key file"),
                                             );
                                             if resp.lost_focus()
@@ -212,9 +220,10 @@ impl ConnectForm {
                                             if ui
                                                 .add(
                                                     egui::Button::new(
-                                                        RichText::new("Browse…").size(18.0),
+                                                        RichText::new("Browse…")
+                                                            .size(FORM_LABEL_SIZE),
                                                     )
-                                                    .min_size(egui::vec2(104.0, 38.0)),
+                                                    .min_size(egui::vec2(112.0, 40.0)),
                                                 )
                                                 .clicked()
                                             {
@@ -229,7 +238,8 @@ impl ConnectForm {
                                         ui.add_space(4.0);
                                         if ui
                                             .link(
-                                                RichText::new("Use password instead").size(15.0),
+                                                RichText::new("Use password instead")
+                                                    .size(FORM_SECONDARY_SIZE),
                                             )
                                             .clicked()
                                         {
@@ -241,25 +251,30 @@ impl ConnectForm {
                             }
                         });
 
-                    ui.add_space(20.0);
+                    ui.add_space(22.0);
 
                     if let Some(err) = &self.error {
-                        ui.colored_label(egui::Color32::from_rgb(220, 80, 80), err);
+                        ui.colored_label(
+                            egui::Color32::from_rgb(220, 80, 80),
+                            RichText::new(err).size(FORM_SECONDARY_SIZE),
+                        );
                         ui.add_space(8.0);
                     }
 
                     ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
                         if self.connecting {
                             ui.spinner();
-                            ui.label(RichText::new("Connecting…").size(18.0));
+                            ui.label(
+                                RichText::new("Connecting…").size(FORM_LABEL_SIZE),
+                            );
                             ui.add_space(12.0);
                         }
                         let can_connect = self.can_connect();
                         if ui
                             .add_enabled(
                                 can_connect,
-                                egui::Button::new(RichText::new("Connect").size(20.0))
-                                    .min_size(egui::vec2(128.0, 44.0)),
+                                egui::Button::new(RichText::new("Connect").size(22.0))
+                                    .min_size(egui::vec2(136.0, 46.0)),
                             )
                             .clicked()
                         {

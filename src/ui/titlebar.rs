@@ -18,7 +18,7 @@ pub fn show(ui: &mut egui::Ui, title: &str, maximized: bool) -> TitleBarAction {
         double_clicked: false,
     };
 
-    let height = 36.0_f32;
+    let height = 42.0_f32;
     let (rect, resp) = ui.allocate_exact_size(
         Vec2::new(ui.available_width(), height),
         Sense::click_and_drag(),
@@ -33,7 +33,7 @@ pub fn show(ui: &mut egui::Ui, title: &str, maximized: bool) -> TitleBarAction {
         egui::pos2(rect.left() + 12.0, rect.center().y),
         egui::Align2::LEFT_CENTER,
         title,
-        egui::FontId::proportional(16.0),
+        egui::FontId::proportional(20.0),
         ui.visuals().widgets.noninteractive.fg_stroke.color,
     );
 
@@ -56,7 +56,7 @@ pub fn show(ui: &mut egui::Ui, title: &str, maximized: bool) -> TitleBarAction {
         close_rect.center(),
         egui::Align2::CENTER_CENTER,
         "X",
-        egui::FontId::proportional(14.0),
+        egui::FontId::proportional(16.0),
         if close.hovered() {
             egui::Color32::WHITE
         } else {
@@ -79,7 +79,7 @@ pub fn show(ui: &mut egui::Ui, title: &str, maximized: bool) -> TitleBarAction {
         max_rect.center(),
         egui::Align2::CENTER_CENTER,
         if maximized { "❐" } else { "□" },
-        egui::FontId::proportional(16.0),
+        egui::FontId::proportional(18.0),
         ui.visuals().text_color(),
     );
     if max.clicked() {
@@ -99,7 +99,7 @@ pub fn show(ui: &mut egui::Ui, title: &str, maximized: bool) -> TitleBarAction {
         min_rect.center(),
         egui::Align2::CENTER_CENTER,
         "–",
-        egui::FontId::proportional(18.0),
+        egui::FontId::proportional(20.0),
         ui.visuals().text_color(),
     );
     if min.clicked() {

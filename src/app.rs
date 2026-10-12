@@ -888,16 +888,16 @@ fn open_url(url: &str) {
 fn apply_large_style(ctx: &egui::Context, theme: Theme) {
     let mut style = (*ctx.style()).clone();
     style.text_styles = [
-        (TextStyle::Small, FontId::new(15.0, FontFamily::Proportional)),
-        (TextStyle::Body, FontId::new(18.0, FontFamily::Proportional)),
-        (TextStyle::Button, FontId::new(18.0, FontFamily::Proportional)),
-        (TextStyle::Heading, FontId::new(28.0, FontFamily::Proportional)),
-        (TextStyle::Monospace, FontId::new(17.0, FontFamily::Monospace)),
+        (TextStyle::Small, FontId::new(16.0, FontFamily::Proportional)),
+        (TextStyle::Body, FontId::new(20.0, FontFamily::Proportional)),
+        (TextStyle::Button, FontId::new(20.0, FontFamily::Proportional)),
+        (TextStyle::Heading, FontId::new(30.0, FontFamily::Proportional)),
+        (TextStyle::Monospace, FontId::new(18.0, FontFamily::Monospace)),
     ]
     .into();
     style.spacing.item_spacing = egui::vec2(10.0, 8.0);
     style.spacing.button_padding = egui::vec2(12.0, 8.0);
-    style.spacing.interact_size = egui::vec2(52.0, 30.0);
+    style.spacing.interact_size = egui::vec2(56.0, 32.0);
     style.spacing.window_margin = egui::Margin::same(14.0);
     style.spacing.menu_margin = egui::Margin::same(8.0);
     style.spacing.indent = 22.0;
@@ -956,7 +956,7 @@ impl eframe::App for App {
         // Custom chrome — OS decorations are disabled in main.rs so CSD/DWM
         // drop-shadows cannot linger as a pre-maximize outline.
         egui::TopBottomPanel::top("titlebar")
-            .exact_height(36.0)
+            .exact_height(42.0)
             .frame(flat)
             .show(ctx, |ui| {
                 crate::ui::titlebar::show(ui, "SSH Split Pane", maximized);
@@ -967,7 +967,7 @@ impl eframe::App for App {
                 egui::Frame::none()
                     .fill(fill)
                     .stroke(egui::Stroke::NONE)
-                    .inner_margin(egui::Margin::symmetric(8.0, 4.0)),
+                    .inner_margin(egui::Margin::symmetric(10.0, 6.0)),
             )
             .show(ctx, |ui| {
                 let connected = self.screen == Screen::Browser;
