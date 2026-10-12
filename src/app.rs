@@ -1,7 +1,13 @@
 //! Application state machine.
 
+use std::process::Command;
+
 use eframe::egui::{self, FontFamily, FontId, RichText, TextStyle};
 use log::{error, info, warn};
+
+const ISSUE_URL: &str = "https://github.com/philleer/ssh_pane/issues";
+const RELEASE_NOTES: &str = include_str!("../RELEASE_NOTES.md");
+const LICENSE_TEXT: &str = include_str!("../LICENSE");
 
 use ssh_pane::ops;
 use ssh_pane::settings::{Settings, Theme};
@@ -60,6 +66,8 @@ pub struct App {
     overwrite: Option<OverwritePrompt>,
     new_folder: Option<NewFolderPrompt>,
     batch: Option<BatchJob>,
+    show_release_notes: bool,
+    show_license: bool,
     show_about: bool,
     theme: Theme,
     /// Previous frame maximized flag — used to force a full redraw on toggle.
@@ -90,6 +98,8 @@ impl App {
             overwrite: None,
             new_folder: None,
             batch: None,
+            show_release_notes: false,
+            show_license: false,
             show_about: false,
             theme,
             was_maximized: false,
@@ -681,31 +691,90 @@ impl App {
         if !self.show_about {
             return;
         }
-        egui::Window::new("About SSH Split Pane")
+        // Bump together with Cargo.toml version / git tag when cutting a release.
+        const RELEASE_TIME: &str = "2026-10-12 11:20 (UTC +8)";
+
+        // Area (no title bar): drag anywhere on the panel; keep a clear border.
+        // Do not use Window `.anchor(...)` every frame — that pins position.
+        let border = egui::Stroke::new(
+            2.0_f32,
+            ctx.style().visuals.widgets.noninteractive.fg_stroke.color,
+        );
+        let frame = egui::Frame::window(&ctx.style())
+            .stroke(border)
+            .inner_margin(egui::Margin::symmetric(28.0, 32.0));
+        let center = ctx.screen_rect().center();
+
+        egui::Area::new(egui::Id::new("about_dialog"))
+            .order(egui::Order::Foreground)
+            .movable(true)
+            .default_pos(center - egui::vec2(210.0, 140.0))
+            .show(ctx, |ui| {
+                frame.show(ui, |ui| {
+                    ui.set_min_width(420.0);
+                    ui.vertical_centered(|ui| {
+                        ui.add_space(8.0);
+                        ui.label(
+                            RichText::new(format!("Version v{}", env!("CARGO_PKG_VERSION")))
+                                .size(22.0),
+                        );
+                        ui.add_space(10.0);
+                        ui.label(RichText::new(RELEASE_TIME).size(18.0));
+                        ui.add_space(24.0);
+                        ui.label(
+                            RichText::new("Copyright © 2026 phillee. All rights reserved.")
+                                .size(16.0)
+                                .weak(),
+                        );
+                        ui.add_space(28.0);
+                        if ui
+                            .add(
+                                egui::Button::new(RichText::new("OK").size(20.0))
+                                    .min_size(egui::vec2(100.0, 40.0)),
+                            )
+                            .clicked()
+                        {
+                            self.show_about = false;
+                        }
+                        ui.add_space(8.0);
+                    });
+                });
+            });
+    }
+
+    fn show_text_modal(
+        open: &mut bool,
+        ctx: &egui::Context,
+        title: &str,
+        body: &str,
+    ) {
+        if !*open {
+            return;
+        }
+        egui::Window::new(title)
             .collapsible(false)
-            .resizable(false)
+            .resizable(true)
+            .default_size([640.0, 480.0])
             .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
             .show(ctx, |ui| {
-                ui.set_min_width(400.0);
-                ui.heading("SSH Split Pane");
-                ui.label(RichText::new("v0.1.0").size(17.0));
-                ui.add_space(8.0);
-                ui.label(
-                    RichText::new(
-                        "Remote dual-pane file manager.\nDrag between panes to CP/MV on the same SSH host.",
-                    )
-                    .size(18.0),
-                );
+                egui::ScrollArea::vertical()
+                    .max_height(420.0)
+                    .show(ui, |ui| {
+                        ui.set_min_width(600.0);
+                        ui.label(RichText::new(body).size(15.0).monospace());
+                    });
                 ui.add_space(12.0);
-                if ui
-                    .add(
-                        egui::Button::new(RichText::new("OK").size(18.0))
-                            .min_size(egui::vec2(88.0, 38.0)),
-                    )
-                    .clicked()
-                {
-                    self.show_about = false;
-                }
+                ui.with_layout(egui::Layout::top_down(egui::Align::Center), |ui| {
+                    if ui
+                        .add(
+                            egui::Button::new(RichText::new("Close").size(18.0))
+                                .min_size(egui::vec2(96.0, 38.0)),
+                        )
+                        .clicked()
+                    {
+                        *open = false;
+                    }
+                });
             });
     }
 
@@ -731,6 +800,15 @@ impl App {
         }
         if actions.disconnect {
             self.worker.send(WorkerRequest::Disconnect);
+        }
+        if actions.show_release_notes {
+            self.show_release_notes = true;
+        }
+        if actions.report_issue {
+            open_url(ISSUE_URL);
+        }
+        if actions.show_license {
+            self.show_license = true;
         }
         if actions.show_about {
             self.show_about = true;
@@ -790,6 +868,23 @@ fn decode_preview_texture(
     ))
 }
 
+fn open_url(url: &str) {
+    info!("opening URL: {url}");
+    let result = if cfg!(target_os = "windows") {
+        Command::new("cmd")
+            .args(["/C", "start", "", url])
+            .spawn()
+            .map(|_| ())
+    } else if cfg!(target_os = "macos") {
+        Command::new("open").arg(url).spawn().map(|_| ())
+    } else {
+        Command::new("xdg-open").arg(url).spawn().map(|_| ())
+    };
+    if let Err(e) = result {
+        warn!("failed to open URL {url}: {e}");
+    }
+}
+
 fn apply_large_style(ctx: &egui::Context, theme: Theme) {
     let mut style = (*ctx.style()).clone();
     style.text_styles = [
@@ -841,6 +936,13 @@ impl eframe::App for App {
         self.poll_worker(ctx);
         self.show_overwrite_modal(ctx);
         self.show_new_folder_modal(ctx);
+        Self::show_text_modal(
+            &mut self.show_release_notes,
+            ctx,
+            "Release Notes",
+            RELEASE_NOTES,
+        );
+        Self::show_text_modal(&mut self.show_license, ctx, "License", LICENSE_TEXT);
         self.show_about_modal(ctx);
 
         let fill = ctx.style().visuals.panel_fill;

@@ -32,7 +32,7 @@ Windows/Linux 桌面工具：通过 SSH 做**远端双栏**文件浏览。
 
 ## 功能
 
-- 密码或私钥登录（登录页 **Auth** 切换）
+- 默认密码登录；登录页点 **Use private key…** 可改用私钥
 - **View → Theme → Dark / Light** 切换主题；偏好会持久化
 - **File / View / Help** 菜单栏
 - **CP / MV** 模式切换（工具栏高亮按钮）

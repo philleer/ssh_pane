@@ -11,6 +11,9 @@ pub struct MenuActions {
     pub refresh_right: bool,
     pub refresh_both: bool,
     pub new_folder: Option<PaneSide>,
+    pub show_release_notes: bool,
+    pub report_issue: bool,
+    pub show_license: bool,
     pub show_about: bool,
     pub set_mode: Option<OpMode>,
     pub set_theme: Option<Theme>,
@@ -141,7 +144,20 @@ pub fn show_menu_bar(
         });
 
         ui.menu_button("Help", |ui| {
-            ui.set_min_width(140.0);
+            ui.set_min_width(200.0);
+            if ui.button("Show Release Notes").clicked() {
+                actions.show_release_notes = true;
+                ui.close_menu();
+            }
+            if ui.button("Report issue").clicked() {
+                actions.report_issue = true;
+                ui.close_menu();
+            }
+            if ui.button("View License").clicked() {
+                actions.show_license = true;
+                ui.close_menu();
+            }
+            ui.separator();
             if ui.button("About").clicked() {
                 actions.show_about = true;
                 ui.close_menu();

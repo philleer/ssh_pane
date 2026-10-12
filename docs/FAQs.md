@@ -64,3 +64,27 @@ Finished `release` profile … in ~33s
 `rel` keeps `opt-level = 3`, sets `lto = false` and `incremental = true`. On this environment a warm touch rebuild dropped from ~30s (`--release`) to ~1.5s (`--profile rel`). Binary: `target/rel/ssh_pane`.
 
 More build-cost tables: [BUILD.md](BUILD.md).
+
+---
+
+## Q2. What is the difference between `target/rel` and `target/release`? Why use `rel`?
+
+### A2.
+
+They are **two different Cargo profiles**, writing into different directories. Nothing replaced official `release`; `rel` was added for **day-to-day iteration**.
+
+| | `target/release` | `target/rel` |
+|--|------------------|--------------|
+| Command | `./scripts/cargo.sh build --release` | `./scripts/cargo.sh build --profile rel` |
+| Optimization | `opt-level = 3` | `opt-level = 3` |
+| LTO | **thin** (this repo) | **off** |
+| Incremental | **off** (Cargo default for `release`) | **on** |
+| Warm rebuild after a UI edit | often **~30s+** (relink) | about **1–2s** |
+| Use for | try / share a near-shipping binary | daily UI work |
+
+**Why `rel` exists:** Q1 — warm `--release` rebuilds still pay thin-LTO link time. `rel` keeps release-like speed at runtime for local use, without that link tax.
+
+**What did not change:** shipping / GitHub Release packages still use `--release` or `--profile dist` (`target/release` / `target/dist`). Prefer `target/rel/ssh_pane` only while developing.
+
+- Recorded: 2026-10-12 (+08:00)
+- Environment: same baseline as Q1 (ubuntu-26.04 WSL2)

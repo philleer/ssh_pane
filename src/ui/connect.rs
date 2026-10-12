@@ -53,11 +53,31 @@ impl ConnectForm {
 
     /// Returns true if connect was requested this frame.
     pub fn show(&mut self, ctx: &egui::Context, worker: &WorkerHandle) -> bool {
+        let fill = ctx.style().visuals.panel_fill;
+        // Title bar already shows the product name; keep a weak slogan at the bottom.
+        egui::TopBottomPanel::bottom("connect_slogan")
+            .exact_height(44.0)
+            .frame(
+                egui::Frame::none()
+                    .fill(fill)
+                    .stroke(egui::Stroke::NONE)
+                    .inner_margin(egui::Margin::symmetric(8.0, 10.0)),
+            )
+            .show(ctx, |ui| {
+                ui.vertical_centered(|ui| {
+                    ui.label(
+                        RichText::new("Same-host dual pane — drag to cp/mv over SSH.")
+                            .size(17.0)
+                            .weak(),
+                    );
+                });
+            });
+
         let mut requested = false;
         egui::CentralPanel::default()
             .frame(
                 egui::Frame::none()
-                    .fill(ctx.style().visuals.panel_fill)
+                    .fill(fill)
                     .stroke(egui::Stroke::NONE),
             )
             .show(ctx, |ui| {
@@ -71,25 +91,18 @@ impl ConnectForm {
         let mut requested = false;
         let mut submit = false;
         const FORM_WIDTH: f32 = 620.0;
+        // Host/Port/User/Password + link + Connect — used to vertically center the block.
+        const FORM_HEIGHT: f32 = 360.0;
 
-        ui.vertical_centered(|ui| {
-            ui.add_space(48.0);
-            ui.heading(RichText::new("SSH Split Pane").size(34.0));
-            ui.label(
-                RichText::new(
-                    "Connect to a remote host, then drag files between panes to CP/MV.",
-                )
-                .size(18.0),
-            );
-            ui.add_space(28.0);
-        });
+        let avail = ui.available_size();
+        let top_pad = ((avail.y - FORM_HEIGHT) * 0.5).max(0.0);
+        let x_pad = ((avail.x - FORM_WIDTH) * 0.5).max(0.0);
 
-        // Center the form block horizontally; keep fields left-aligned inside.
+        ui.add_space(top_pad);
         ui.horizontal(|ui| {
-            let pad = ((ui.available_width() - FORM_WIDTH) * 0.5).max(0.0);
-            ui.add_space(pad);
+            ui.add_space(x_pad);
             ui.allocate_ui_with_layout(
-                egui::vec2(FORM_WIDTH, ui.available_height()),
+                egui::vec2(FORM_WIDTH, FORM_HEIGHT),
                 Layout::top_down(Align::LEFT),
                 |ui| {
                     ui.set_max_width(FORM_WIDTH);
@@ -149,71 +162,78 @@ impl ConnectForm {
                             });
                             ui.end_row();
 
-                            ui.label(RichText::new("Auth").size(18.0));
-                            ui.horizontal(|ui| {
-                                if mode_button(
-                                    ui,
-                                    "Password",
-                                    self.auth == AuthMethod::Password,
-                                )
-                                .clicked()
-                                {
-                                    self.auth = AuthMethod::Password;
-                                }
-                                if mode_button(
-                                    ui,
-                                    "Private key",
-                                    self.auth == AuthMethod::PrivateKey,
-                                )
-                                .clicked()
-                                {
-                                    self.auth = AuthMethod::PrivateKey;
-                                }
-                            });
-                            ui.end_row();
-
                             match self.auth {
                                 AuthMethod::Password => {
                                     ui.label(RichText::new("Password").size(18.0));
-                                    let resp = ui.add(
-                                        egui::TextEdit::singleline(&mut self.password)
-                                            .password(true)
-                                            .desired_width(320.0)
-                                            .margin(egui::Margin::symmetric(10.0, 8.0)),
-                                    );
-                                    if resp.lost_focus()
-                                        && ui.input(|i| i.key_pressed(egui::Key::Enter))
-                                    {
-                                        submit = true;
-                                    }
-                                    ui.end_row();
-                                }
-                                AuthMethod::PrivateKey => {
-                                    ui.label(RichText::new("Private key").size(18.0));
-                                    ui.horizontal(|ui| {
+                                    ui.vertical(|ui| {
                                         let resp = ui.add(
-                                            egui::TextEdit::singleline(&mut self.private_key)
-                                                .desired_width(240.0)
-                                                .margin(egui::Margin::symmetric(10.0, 8.0))
-                                                .hint_text("path to key file"),
+                                            egui::TextEdit::singleline(&mut self.password)
+                                                .password(true)
+                                                .desired_width(320.0)
+                                                .margin(egui::Margin::symmetric(10.0, 8.0)),
                                         );
                                         if resp.lost_focus()
                                             && ui.input(|i| i.key_pressed(egui::Key::Enter))
                                         {
                                             submit = true;
                                         }
+                                        ui.add_space(4.0);
                                         if ui
-                                            .add(
-                                                egui::Button::new(
-                                                    RichText::new("Browse…").size(18.0),
-                                                )
-                                                .min_size(egui::vec2(104.0, 38.0)),
+                                            .link(RichText::new("Use private key…").size(15.0))
+                                            .on_hover_text(
+                                                "Authenticate with an SSH private key file instead",
                                             )
                                             .clicked()
                                         {
-                                            if let Some(path) = rfd::FileDialog::new().pick_file() {
-                                                self.private_key = path.display().to_string();
+                                            self.auth = AuthMethod::PrivateKey;
+                                        }
+                                    });
+                                    ui.end_row();
+                                }
+                                AuthMethod::PrivateKey => {
+                                    ui.label(RichText::new("Private key").size(18.0));
+                                    ui.vertical(|ui| {
+                                        ui.horizontal(|ui| {
+                                            let resp = ui.add(
+                                                egui::TextEdit::singleline(
+                                                    &mut self.private_key,
+                                                )
+                                                .desired_width(240.0)
+                                                .margin(egui::Margin::symmetric(10.0, 8.0))
+                                                .hint_text("path to key file"),
+                                            );
+                                            if resp.lost_focus()
+                                                && ui.input(|i| {
+                                                    i.key_pressed(egui::Key::Enter)
+                                                })
+                                            {
+                                                submit = true;
                                             }
+                                            if ui
+                                                .add(
+                                                    egui::Button::new(
+                                                        RichText::new("Browse…").size(18.0),
+                                                    )
+                                                    .min_size(egui::vec2(104.0, 38.0)),
+                                                )
+                                                .clicked()
+                                            {
+                                                if let Some(path) =
+                                                    rfd::FileDialog::new().pick_file()
+                                                {
+                                                    self.private_key =
+                                                        path.display().to_string();
+                                                }
+                                            }
+                                        });
+                                        ui.add_space(4.0);
+                                        if ui
+                                            .link(
+                                                RichText::new("Use password instead").size(15.0),
+                                            )
+                                            .clicked()
+                                        {
+                                            self.auth = AuthMethod::Password;
                                         }
                                     });
                                     ui.end_row();
