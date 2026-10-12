@@ -24,13 +24,10 @@ Windows/Linux 桌面工具：通过 SSH 做**远端双栏**文件浏览。
 
 变更说明见 [RELEASE_NOTES.md](RELEASE_NOTES.md)。
 
-## 截图
-
-> 将 `docs/screenshots/connect.png` 与 `docs/screenshots/dual-pane.png` 放入仓库后取消 README 中的注释（见 [docs/screenshots/README.md](docs/screenshots/README.md)）。
-
 ## 功能
 
 - 密码或私钥登录（登录页 **Auth** 切换）
+- **View → Theme → Dark / Light** 切换主题；偏好会持久化
 - **File / View / Help** 菜单栏
 - **CP / MV** 模式切换（工具栏高亮按钮）
 - 左右分栏，各自独立远端路径
@@ -97,6 +94,7 @@ sudo apt install build-essential pkg-config libssl-dev
 - Dev profile 会对依赖开 `opt-level = 2`，egui 更流畅，自己的 crate 仍能较快重编。
 - 默认 `--release` 使用 **thin LTO**；需要极致体积/速度时用 `--profile dist`。
 - `PATH` 里有 `mold` 和 `sccache` 时，包装脚本会自动打开（对 vendored OpenSSL 帮助很大）。
+- 更详细的编译耗时说明见 [docs/BUILD.md](docs/BUILD.md)。
 
 从 Linux 交叉编译 Windows（可选）：
 
@@ -159,10 +157,6 @@ tests/
   functional_worker.rs    # 无会话的 worker 消息
   functional_live_ssh.rs  # 可选真实 SSH（--ignored）
 ```
-
-## 贡献 / 开源发布
-
-发布前检查清单见 [OPEN_SOURCE.md](OPEN_SOURCE.md)。
 
 ## 许可证
 

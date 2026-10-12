@@ -282,21 +282,20 @@ impl ConnectForm {
     }
 
     fn persist_settings(&self) {
-        Settings {
-            remember_user: self.remember_user,
-            user: if self.remember_user {
-                self.user.trim().to_string()
-            } else {
-                String::new()
-            },
-            remember_host: self.remember_host,
-            host: if self.remember_host {
-                self.host.trim().to_string()
-            } else {
-                String::new()
-            },
-        }
-        .save();
+        let mut s = Settings::load();
+        s.remember_user = self.remember_user;
+        s.user = if self.remember_user {
+            self.user.trim().to_string()
+        } else {
+            String::new()
+        };
+        s.remember_host = self.remember_host;
+        s.host = if self.remember_host {
+            self.host.trim().to_string()
+        } else {
+            String::new()
+        };
+        s.save();
     }
 
     fn build_params(&self) -> Result<ConnectParams, String> {

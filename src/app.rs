@@ -1,9 +1,10 @@
 //! Application state machine.
 
 use eframe::egui::{self, FontFamily, FontId, RichText, TextStyle};
-use log::{info, warn};
+use log::{error, info, warn};
 
 use ssh_pane::ops;
+use ssh_pane::settings::{Settings, Theme};
 use ssh_pane::ssh_worker::{
     OpMode, PaneSide, WorkerEvent, WorkerHandle, WorkerRequest,
 };
@@ -60,14 +61,21 @@ pub struct App {
     new_folder: Option<NewFolderPrompt>,
     batch: Option<BatchJob>,
     show_about: bool,
+    theme: Theme,
     /// Previous frame maximized flag — used to force a full redraw on toggle.
     was_maximized: bool,
 }
 
 impl App {
     pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
+        info!(
+            "UI init: settings_path={}",
+            Settings::path().display()
+        );
         ssh_pane::fonts::install_cjk_fonts(&cc.egui_ctx);
-        apply_large_style(&cc.egui_ctx);
+        let theme = Settings::load().theme;
+        apply_large_style(&cc.egui_ctx, theme);
+        info!("UI init: applied theme={} on connect screen", theme.as_str());
         Self {
             screen: Screen::Connect,
             connect: ConnectForm::new(),
@@ -83,6 +91,7 @@ impl App {
             new_folder: None,
             batch: None,
             show_about: false,
+            theme,
             was_maximized: false,
         }
     }
@@ -111,7 +120,8 @@ impl App {
                 self.request_list(PaneSide::Right, home);
             }
             WorkerEvent::ConnectFailed(msg) => {
-                warn!("UI connect failed: {msg}");
+                error!("UI connect failed: {msg}");
+                self.status = format!("Connect failed: {msg}");
                 self.connect.on_connect_failed(msg);
                 self.busy = false;
             }
@@ -610,14 +620,10 @@ impl App {
             return;
         };
         let parent = prompt.parent.clone();
-        let side_label = match prompt.side {
-            PaneSide::Left => "Left",
-            PaneSide::Right => "Right",
-        };
         let mut create = false;
         let mut cancel = false;
 
-        egui::Window::new(format!("New Folder ({side_label})"))
+        egui::Window::new("New Folder")
             .collapsible(false)
             .resizable(false)
             .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
@@ -720,6 +726,9 @@ impl App {
         if let Some(side) = actions.new_folder {
             self.open_new_folder_dialog(side);
         }
+        if let Some(theme) = actions.set_theme {
+            self.set_theme(ctx, theme);
+        }
         if actions.disconnect {
             self.worker.send(WorkerRequest::Disconnect);
         }
@@ -728,6 +737,36 @@ impl App {
         }
         if actions.exit {
             ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+        }
+    }
+
+    fn set_theme(&mut self, ctx: &egui::Context, theme: Theme) {
+        if self.theme == theme {
+            return;
+        }
+        info!(
+            "theme change: {} -> {} (connect_screen={})",
+            self.theme.as_str(),
+            theme.as_str(),
+            self.screen == Screen::Connect
+        );
+        self.theme = theme;
+        apply_large_style(ctx, theme);
+        let mut s = Settings::load();
+        s.theme = theme;
+        s.save();
+        ctx.request_repaint();
+    }
+
+    /// eframe may reset visuals after `App::new`; keep them aligned every frame.
+    fn ensure_theme(&self, ctx: &egui::Context) {
+        if ctx.style().visuals.dark_mode != self.theme.is_dark() {
+            warn!(
+                "theme drifted (egui dark_mode={} want={}); re-applying",
+                ctx.style().visuals.dark_mode,
+                self.theme.as_str()
+            );
+            apply_large_style(ctx, self.theme);
         }
     }
 }
@@ -751,7 +790,7 @@ fn decode_preview_texture(
     ))
 }
 
-fn apply_large_style(ctx: &egui::Context) {
+fn apply_large_style(ctx: &egui::Context, theme: Theme) {
     let mut style = (*ctx.style()).clone();
     style.text_styles = [
         (TextStyle::Small, FontId::new(15.0, FontFamily::Proportional)),
@@ -767,6 +806,10 @@ fn apply_large_style(ctx: &egui::Context) {
     style.spacing.window_margin = egui::Margin::same(14.0);
     style.spacing.menu_margin = egui::Margin::same(8.0);
     style.spacing.indent = 22.0;
+    style.visuals = match theme {
+        Theme::Light => egui::Visuals::light(),
+        Theme::Dark => egui::Visuals::dark(),
+    };
     // Keep expansion at 0 so widget strokes cannot paint outside the
     // allocated rect — that leftover stroke looks like a pre-maximize outline.
     style.visuals.widgets.noninteractive.expansion = 0.0;
@@ -785,6 +828,8 @@ impl eframe::App for App {
     }
 
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        self.ensure_theme(ctx);
+
         let maximized = ctx.input(|i| i.viewport().maximized.unwrap_or(false));
         if maximized != self.was_maximized {
             self.was_maximized = maximized;
@@ -830,6 +875,7 @@ impl eframe::App for App {
                     self.busy,
                     self.mode,
                     self.active_pane,
+                    self.theme,
                 );
                 self.apply_menu_actions(actions, ctx);
             });

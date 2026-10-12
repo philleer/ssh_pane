@@ -25,18 +25,10 @@ If no release assets are attached yet, build from source (below) or run:
 
 See [RELEASE_NOTES.md](RELEASE_NOTES.md) for what changed in each version.
 
-## Screenshots
-
-> Add `docs/screenshots/connect.png` and `docs/screenshots/dual-pane.png` (see [docs/screenshots/README.md](docs/screenshots/README.md)).
-
-<!--
-![Connect](docs/screenshots/connect.png)
-![Dual pane](docs/screenshots/dual-pane.png)
--->
-
 ## Features
 
 - Connect via password or private key (toggle on the login form)
+- **View → Theme → Dark / Light**; preference is persisted
 - **File / View / Help** menu bar
 - **CP / MV** mode toggle (highlighted toolbar buttons)
 - Split left/right panes, each with its own remote path
@@ -103,6 +95,7 @@ sudo apt install build-essential pkg-config libssl-dev
 - Dev profile optimizes dependencies (`opt-level = 2`) for snappier egui while your crates stay quick to recompile.
 - Default `--release` uses **thin LTO**; use `--profile dist` when you want maximum size/speed optimization.
 - With `mold` and `sccache` on `PATH`, the wrapper turns them on automatically (helps a lot with vendored OpenSSL).
+- Longer write-up: [docs/BUILD.md](docs/BUILD.md) (OpenSSL/egui/LTO tradeoffs).
 
 Cross-compile for Windows from Linux (optional):
 
@@ -165,10 +158,6 @@ tests/
   functional_worker.rs    # worker messaging without a session
   functional_live_ssh.rs  # optional live SSH (--ignored)
 ```
-
-## Contributing / opening the repo
-
-See [OPEN_SOURCE.md](OPEN_SOURCE.md) for the publish checklist (license, topics, first Release).
 
 ## License
 

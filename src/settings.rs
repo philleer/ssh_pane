@@ -3,7 +3,41 @@
 use std::fs;
 use std::path::PathBuf;
 
-use log::{debug, warn};
+use log::{debug, info, warn};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Theme {
+    #[default]
+    Dark,
+    Light,
+}
+
+impl Theme {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Theme::Dark => "dark",
+            Theme::Light => "light",
+        }
+    }
+
+    pub fn parse(s: &str) -> Self {
+        match s.trim().to_ascii_lowercase().as_str() {
+            "light" | "white" => Theme::Light,
+            _ => Theme::Dark,
+        }
+    }
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Theme::Dark => "Dark",
+            Theme::Light => "Light",
+        }
+    }
+
+    pub fn is_dark(self) -> bool {
+        matches!(self, Theme::Dark)
+    }
+}
 
 #[derive(Debug, Clone, Default)]
 pub struct Settings {
@@ -11,17 +45,41 @@ pub struct Settings {
     pub user: String,
     pub remember_host: bool,
     pub host: String,
+    pub theme: Theme,
 }
 
 impl Settings {
+    pub fn path() -> PathBuf {
+        settings_path()
+    }
+
     pub fn load() -> Self {
         let path = settings_path();
-        let text = match fs::read_to_string(&path) {
-            Ok(t) => t,
-            Err(_) => match legacy_settings_path().and_then(|p| fs::read_to_string(p).ok()) {
-                Some(t) => t,
-                None => return Self::default(),
-            },
+        let (text, source) = match fs::read_to_string(&path) {
+            Ok(t) => (t, path.clone()),
+            Err(e) => {
+                debug!("no settings at {}: {e}", path.display());
+                match legacy_settings_path() {
+                    Some(legacy) => match fs::read_to_string(&legacy) {
+                        Ok(t) => {
+                            info!(
+                                "loading legacy settings from {} (will migrate to {})",
+                                legacy.display(),
+                                path.display()
+                            );
+                            (t, legacy)
+                        }
+                        Err(_) => {
+                            info!("no settings file; using defaults (theme=dark)");
+                            return Self::default();
+                        }
+                    },
+                    None => {
+                        info!("no settings file; using defaults (theme=dark)");
+                        return Self::default();
+                    }
+                }
+            }
         };
         let mut s = Self::default();
         for line in text.lines() {
@@ -35,11 +93,22 @@ impl Settings {
                     "user" => s.user = v.trim().to_string(),
                     "remember_host" => s.remember_host = parse_bool(v),
                     "host" => s.host = v.trim().to_string(),
+                    "theme" => s.theme = Theme::parse(v),
                     _ => {}
                 }
             }
         }
-        debug!("loaded settings from {}", path.display());
+        info!(
+            "settings loaded from {} (theme={}, remember_host={}, remember_user={})",
+            source.display(),
+            s.theme.as_str(),
+            s.remember_host,
+            s.remember_user
+        );
+        // Migrate legacy → new path so theme and other keys persist under ssh_pane.
+        if source != path {
+            s.save();
+        }
         s
     }
 
@@ -56,7 +125,8 @@ impl Settings {
 remember_user={}\n\
 user={}\n\
 remember_host={}\n\
-host={}\n",
+host={}\n\
+theme={}\n",
             bool_str(self.remember_user),
             if self.remember_user {
                 self.user.as_str()
@@ -69,11 +139,16 @@ host={}\n",
             } else {
                 ""
             },
+            self.theme.as_str(),
         );
         if let Err(e) = fs::write(&path, body) {
             warn!("cannot write settings {}: {e}", path.display());
         } else {
-            debug!("saved settings to {}", path.display());
+            debug!(
+                "saved settings to {} (theme={})",
+                path.display(),
+                self.theme.as_str()
+            );
         }
     }
 }
@@ -139,5 +214,13 @@ mod tests {
         assert!(s.user.is_empty());
         assert!(!s.remember_host);
         assert!(s.host.is_empty());
+        assert_eq!(s.theme, Theme::Dark);
+    }
+
+    #[test]
+    fn theme_parse_aliases() {
+        assert_eq!(Theme::parse("light"), Theme::Light);
+        assert_eq!(Theme::parse("white"), Theme::Light);
+        assert_eq!(Theme::parse("dark"), Theme::Dark);
     }
 }

@@ -157,11 +157,6 @@ pub fn show_pane(ui: &mut egui::Ui, pane: &mut PaneState, allow_dnd: bool) -> Pa
         batch_move: None,
     };
 
-    let title = match pane.side {
-        PaneSide::Left => "Left",
-        PaneSide::Right => "Right",
-    };
-
     // Fill the allocated dual-pane slot so the frame grows with maximize
     // instead of leaving the old content-sized outline behind.
     let avail = ui.available_size();
@@ -187,8 +182,6 @@ pub fn show_pane(ui: &mut egui::Ui, pane: &mut PaneState, allow_dnd: bool) -> Pa
 
         // Toolbar: wrap when the pane is narrow (esp. maximized dual-pane).
         ui.horizontal_wrapped(|ui| {
-            ui.heading(title);
-            ui.add_space(4.0);
             if ui
                 .add_enabled(
                     !pane.loading,
@@ -490,10 +483,6 @@ fn show_file_list(
 
                 // Context menu for batch move.
                 let n_selected = pane.selected.len();
-                let other = match pane.side {
-                    PaneSide::Left => "Right",
-                    PaneSide::Right => "Left",
-                };
                 resp.context_menu(|ui| {
                     ui.set_min_width(220.0);
                     if n_selected == 0 {
@@ -501,9 +490,9 @@ fn show_file_list(
                         return;
                     }
                     let label = if n_selected == 1 {
-                        format!("Move to {other} pane")
+                        "Move to other pane".to_string()
                     } else {
-                        format!("Move {n_selected} items to {other} pane")
+                        format!("Move {n_selected} items to other pane")
                     };
                     if ui
                         .add_enabled(

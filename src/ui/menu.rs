@@ -1,5 +1,6 @@
 //! Menu bar: File / View / Help.
 
+use ssh_pane::settings::Theme;
 use ssh_pane::ssh_worker::{OpMode, PaneSide};
 
 #[derive(Default)]
@@ -12,6 +13,7 @@ pub struct MenuActions {
     pub new_folder: Option<PaneSide>,
     pub show_about: bool,
     pub set_mode: Option<OpMode>,
+    pub set_theme: Option<Theme>,
 }
 
 pub fn show_menu_bar(
@@ -20,6 +22,7 @@ pub fn show_menu_bar(
     busy: bool,
     mode: OpMode,
     active: PaneSide,
+    theme: Theme,
 ) -> MenuActions {
     let mut actions = MenuActions::default();
 
@@ -117,6 +120,24 @@ pub fn show_menu_bar(
                 actions.refresh_both = true;
                 ui.close_menu();
             }
+            ui.separator();
+            ui.menu_button("Theme", |ui| {
+                ui.set_min_width(120.0);
+                if ui
+                    .add_enabled(theme != Theme::Dark, egui::Button::new("Dark"))
+                    .clicked()
+                {
+                    actions.set_theme = Some(Theme::Dark);
+                    ui.close_menu();
+                }
+                if ui
+                    .add_enabled(theme != Theme::Light, egui::Button::new("Light"))
+                    .clicked()
+                {
+                    actions.set_theme = Some(Theme::Light);
+                    ui.close_menu();
+                }
+            });
         });
 
         ui.menu_button("Help", |ui| {
