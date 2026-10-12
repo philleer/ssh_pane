@@ -3,7 +3,11 @@
 ## v0.1.2
 
 - Rename crate / binary / config / env vars from `ssh_split_pane` to `ssh_pane` (UI display name remains **SSH Split Pane**)
-- Settings still load from the old `ssh_split_pane` config path if present
+- Settings migrate from the old `ssh_split_pane` config path when present
+- **View → Theme → Dark / Light** (persisted); theme applies on the connect screen after startup
+- Drop Left/Right pane titles and similar chrome on the browser UI
+- Startup / connect-failure logging (`RUST_LOG=ssh_pane=debug` for more detail)
+- Repo cleanup; build-time notes in `docs/BUILD.md`
 
 ## v0.1.1
 
