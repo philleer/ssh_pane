@@ -69,6 +69,7 @@ impl ConnectForm {
     /// Draw the connect form into an existing `Ui`.
     pub fn show_in(&mut self, ui: &mut egui::Ui, worker: &WorkerHandle) -> bool {
         let mut requested = false;
+        let mut submit = false;
         const FORM_WIDTH: f32 = 620.0;
 
         ui.vertical_centered(|ui| {
@@ -174,23 +175,33 @@ impl ConnectForm {
                             match self.auth {
                                 AuthMethod::Password => {
                                     ui.label(RichText::new("Password").size(18.0));
-                                    ui.add(
+                                    let resp = ui.add(
                                         egui::TextEdit::singleline(&mut self.password)
                                             .password(true)
                                             .desired_width(320.0)
                                             .margin(egui::Margin::symmetric(10.0, 8.0)),
                                     );
+                                    if resp.lost_focus()
+                                        && ui.input(|i| i.key_pressed(egui::Key::Enter))
+                                    {
+                                        submit = true;
+                                    }
                                     ui.end_row();
                                 }
                                 AuthMethod::PrivateKey => {
                                     ui.label(RichText::new("Private key").size(18.0));
                                     ui.horizontal(|ui| {
-                                        ui.add(
+                                        let resp = ui.add(
                                             egui::TextEdit::singleline(&mut self.private_key)
                                                 .desired_width(240.0)
                                                 .margin(egui::Margin::symmetric(10.0, 8.0))
                                                 .hint_text("path to key file"),
                                         );
+                                        if resp.lost_focus()
+                                            && ui.input(|i| i.key_pressed(egui::Key::Enter))
+                                        {
+                                            submit = true;
+                                        }
                                         if ui
                                             .add(
                                                 egui::Button::new(
@@ -223,9 +234,7 @@ impl ConnectForm {
                             ui.label(RichText::new("Connecting…").size(18.0));
                             ui.add_space(12.0);
                         }
-                        let can_connect = !self.connecting
-                            && !self.host.trim().is_empty()
-                            && !self.user.trim().is_empty();
+                        let can_connect = self.can_connect();
                         if ui
                             .add_enabled(
                                 can_connect,
@@ -234,25 +243,42 @@ impl ConnectForm {
                             )
                             .clicked()
                         {
-                            match self.build_params() {
-                                Ok(params) => {
-                                    self.persist_settings();
-                                    self.connecting = true;
-                                    self.error = None;
-                                    worker.send(WorkerRequest::Connect(params));
-                                    requested = true;
-                                }
-                                Err(e) => {
-                                    self.error = Some(e);
-                                }
-                            }
+                            submit = true;
                         }
                     });
+
+                    if submit && self.try_connect(worker) {
+                        requested = true;
+                    }
                 },
             );
         });
 
         requested
+    }
+
+    fn can_connect(&self) -> bool {
+        !self.connecting && !self.host.trim().is_empty() && !self.user.trim().is_empty()
+    }
+
+    /// Validate and send a connect request. Returns true if a request was sent.
+    fn try_connect(&mut self, worker: &WorkerHandle) -> bool {
+        if !self.can_connect() {
+            return false;
+        }
+        match self.build_params() {
+            Ok(params) => {
+                self.persist_settings();
+                self.connecting = true;
+                self.error = None;
+                worker.send(WorkerRequest::Connect(params));
+                true
+            }
+            Err(e) => {
+                self.error = Some(e);
+                false
+            }
+        }
     }
 
     fn persist_settings(&self) {
