@@ -1,6 +1,6 @@
 [package]
 name = "ssh_pane"
-version = "0.1.3"
+version = "0.1.4"
 edition = "2021"
 description = "Remote dual-pane file manager: drag to cp/mv over SSH"
 license = "MIT"

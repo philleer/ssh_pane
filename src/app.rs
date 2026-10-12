@@ -692,7 +692,7 @@ impl App {
             return;
         }
         // Bump together with Cargo.toml version / git tag when cutting a release.
-        const RELEASE_TIME: &str = "2026-10-12 11:20 (UTC +8)";
+        const RELEASE_TIME: &str = "2026-10-12 12:55 (UTC +8)";
 
         // Area (no title bar): drag anywhere on the panel; keep a clear border.
         // Do not use Window `.anchor(...)` every frame — that pins position.

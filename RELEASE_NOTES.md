@@ -1,5 +1,11 @@
 # Release Notes
 
+## v0.1.4
+
+- Connect UI: larger form fonts; slogan below field labels; auth switch on the same row (**Use key** / **Password**)
+- Help menu polish; About dialog (movable, bordered, version from crate)
+- Refresh connect screenshot
+
 ## v0.1.3
 
 - **Preview** button label only (color shows on/off); item count sits after the filter box
