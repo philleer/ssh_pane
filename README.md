@@ -33,7 +33,7 @@ See [RELEASE_NOTES.md](RELEASE_NOTES.md) for what changed in each version.
 
 ## Features
 
-- Connect via password by default; **Use private key…** on the login form for key auth
+- Connect via password by default; **Use key** on the login form for private-key auth
 - **View → Theme → Dark / Light**; preference is persisted
 - **File / View / Help** menu bar
 - **CP / MV** mode toggle (highlighted toolbar buttons)

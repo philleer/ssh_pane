@@ -167,14 +167,16 @@ impl ConnectForm {
                             });
                             ui.end_row();
 
+                            // Single-row credential field (matches Host/User height).
+                            // Switch auth with a compact link on the right — no extra stacked row.
                             match self.auth {
                                 AuthMethod::Password => {
                                     ui.label(RichText::new("Password").size(FORM_LABEL_SIZE));
-                                    ui.vertical(|ui| {
+                                    ui.horizontal(|ui| {
                                         let resp = ui.add(
                                             egui::TextEdit::singleline(&mut self.password)
                                                 .password(true)
-                                                .desired_width(340.0)
+                                                .desired_width(280.0)
                                                 .margin(egui::Margin::symmetric(10.0, 10.0)),
                                         );
                                         if resp.lost_focus()
@@ -182,14 +184,13 @@ impl ConnectForm {
                                         {
                                             submit = true;
                                         }
-                                        ui.add_space(4.0);
+                                        ui.add_space(10.0);
                                         if ui
                                             .link(
-                                                RichText::new("Use private key…")
-                                                    .size(FORM_SECONDARY_SIZE),
+                                                RichText::new("Use key").size(FORM_SECONDARY_SIZE),
                                             )
                                             .on_hover_text(
-                                                "Authenticate with an SSH private key file instead",
+                                                "Authenticate with an SSH private key file",
                                             )
                                             .clicked()
                                         {
@@ -199,48 +200,41 @@ impl ConnectForm {
                                     ui.end_row();
                                 }
                                 AuthMethod::PrivateKey => {
-                                    ui.label(RichText::new("Private key").size(FORM_LABEL_SIZE));
-                                    ui.vertical(|ui| {
-                                        ui.horizontal(|ui| {
-                                            let resp = ui.add(
-                                                egui::TextEdit::singleline(
-                                                    &mut self.private_key,
-                                                )
-                                                .desired_width(250.0)
+                                    ui.label(RichText::new("Key file").size(FORM_LABEL_SIZE));
+                                    ui.horizontal(|ui| {
+                                        let resp = ui.add(
+                                            egui::TextEdit::singleline(&mut self.private_key)
+                                                .desired_width(200.0)
                                                 .margin(egui::Margin::symmetric(10.0, 10.0))
-                                                .hint_text("path to key file"),
-                                            );
-                                            if resp.lost_focus()
-                                                && ui.input(|i| {
-                                                    i.key_pressed(egui::Key::Enter)
-                                                })
-                                            {
-                                                submit = true;
-                                            }
-                                            if ui
-                                                .add(
-                                                    egui::Button::new(
-                                                        RichText::new("Browse…")
-                                                            .size(FORM_LABEL_SIZE),
-                                                    )
-                                                    .min_size(egui::vec2(112.0, 40.0)),
+                                                .hint_text("~/.ssh/id_ed25519"),
+                                        );
+                                        if resp.lost_focus()
+                                            && ui.input(|i| i.key_pressed(egui::Key::Enter))
+                                        {
+                                            submit = true;
+                                        }
+                                        if ui
+                                            .add(
+                                                egui::Button::new(
+                                                    RichText::new("Browse…")
+                                                        .size(FORM_SECONDARY_SIZE),
                                                 )
-                                                .clicked()
+                                                .min_size(egui::vec2(96.0, 40.0)),
+                                            )
+                                            .clicked()
+                                        {
+                                            if let Some(path) = rfd::FileDialog::new().pick_file()
                                             {
-                                                if let Some(path) =
-                                                    rfd::FileDialog::new().pick_file()
-                                                {
-                                                    self.private_key =
-                                                        path.display().to_string();
-                                                }
+                                                self.private_key = path.display().to_string();
                                             }
-                                        });
-                                        ui.add_space(4.0);
+                                        }
+                                        ui.add_space(8.0);
                                         if ui
                                             .link(
-                                                RichText::new("Use password instead")
+                                                RichText::new("Password")
                                                     .size(FORM_SECONDARY_SIZE),
                                             )
+                                            .on_hover_text("Switch back to password login")
                                             .clicked()
                                         {
                                             self.auth = AuthMethod::Password;
